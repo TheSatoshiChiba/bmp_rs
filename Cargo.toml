@@ -2,7 +2,7 @@
 name = "bmp_rs"
 version = "0.0.1"
 authors = [ "Daniel Drywa <daniel@drywa.me>" ]
-description = "A bitmap file reader and writer."
+description = "Reserved for later use. Bitmap reader and writer."
 #documentation = ""
 #homepage = ""
 #repository = ""
