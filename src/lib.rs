@@ -15,7 +15,7 @@ pub struct Color {
 }
 
 impl Default for Color {
-    /// Returns a default color with values ( r: 0, g: 0, b: 0, a: 255 )
+    /// Returns a default color with values ( r: 0, g: 0, b: 0, a: 255 ).
     fn default() -> Color {
         Color { r: 0, g: 0, b: 0, a: 255 }
     }
@@ -27,30 +27,39 @@ impl fmt::Display for Color {
     }
 }
 
-// #[derive( Debug )]
-// pub struct Bitmap {
-//     width : i16,
-//     height : i16,
-//     bpp : u16,
-//     data : Vec<Color>,
-// }
+/// The bitmap type that is able to hold a vector of 32-bit color values.
+#[derive( Debug )]
+pub struct Bitmap {
+    width : i32,
+    height : i32,
+    data : Vec<Color>,
+}
 
-// impl Bitmap {
-//     pub fn new( width : i16, height : i16, bpp : u16 ) -> Bitmap {
-//         let len = ( width * height ) as usize;
-//         Bitmap { width, height, bpp, data: Vec::with_capacity( len ) }
-//     }
+impl Bitmap {
+    /// Creates a new bitmap filled with black.
+    pub fn new( width : i32, height : i32 ) -> Bitmap {
+        Bitmap::with_color( width, height, Color::default() )
+    }
 
-//     pub fn from( input : &mut Read ) -> Result<Bitmap> {
-//         Ok ( Bitmap::new( 0, 0, 1 ) )
-//     }
-// }
+    /// Creates a new bitmap filled with the given color.
+    pub fn with_color( width : i32, height : i32, color : Color ) -> Bitmap {
+        let len = ( width * height ) as usize;
+        let mut data = Vec::<Color>::with_capacity( len );
+
+        for _ in 0..data.capacity() {
+            data.push( Color { r: color.r, g: color.g, b: color.b, a: color.a } );
+        }
+
+        Bitmap { width, height, data: data }
+    }
+}
 
 #[cfg( test )]
 mod tests {
     use std::fmt;
 
     use super::Color;
+    use super::Bitmap;
 
     #[test]
     fn color_default_test() {
@@ -116,5 +125,51 @@ mod tests {
     fn color_display_test() {
         let s = fmt::format( format_args!( "{}", Color { r: 0, g: 55, b: 155, a: 255 } ) );
         assert_eq!( "(0, 55, 155, 255)", s );
+    }
+
+    #[test]
+    fn bitmap_debug_format_test() {
+        let s = fmt::format(
+            format_args!(
+                "{:?}",
+                Bitmap {
+                    width: 100,
+                    height: 200,
+                    data: Vec::new() } ) );
+
+        assert_eq!( "Bitmap { width: 100, height: 200, data: [] }", s );
+    }
+
+    #[test]
+    fn bitmap_new_test() {
+        let bmp = Bitmap::new( 100, 200 );
+
+        assert_eq!( 100, bmp.width );
+        assert_eq!( 200, bmp.height );
+
+        let len = ( bmp.width * bmp.height ) as usize;
+
+        assert_eq!( len, bmp.data.len() );
+
+        for i in 0..len {
+            assert_eq!( Color::default(), bmp.data[i] );
+        }
+    }
+
+    #[test]
+    fn bitmap_with_color_test() {
+        let color = Color { r: 0, g: 55, b: 155, a: 255 };
+        let bmp = Bitmap::with_color( 100, 200, Color { r: 0, g: 55, b: 155, a: 255 } );
+
+        assert_eq!( 100, bmp.width );
+        assert_eq!( 200, bmp.height );
+
+        let len = ( bmp.width * bmp.height ) as usize;
+
+        assert_eq!( len, bmp.data.len() );
+
+        for i in 0..len {
+            assert_eq!( color, bmp.data[i] );
+        }
     }
 }
