@@ -1,10 +1,10 @@
 [package]
 name = "bmp_rs"
-version = "0.0.1"
+version = "0.0.0"
 authors = [ "Daniel Drywa <daniel@drywa.me>" ]
 description = "Reserved for later use. Bitmap reader and writer."
 #documentation = ""
-#homepage = ""
+homepage = "http://www.drywa.me"
 #repository = ""
 readme = "README.md"
 keywords = [ "bitmap", "file", "reader", "writer", "graphics" ]
