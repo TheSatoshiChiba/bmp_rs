@@ -1,7 +1,11 @@
+//! # bmp_rs
+//!
+//! A bitmap reader and writer.
 use std::io::Read;
 use std::io::Result;
 use std::fmt;
 
+/// The color type that is able to hold 32-bit color values.
 #[derive( Debug, Eq, PartialEq )]
 pub struct Color {
     r : u8,
@@ -11,6 +15,7 @@ pub struct Color {
 }
 
 impl Default for Color {
+    /// Returns a default color with values ( r: 0, g: 0, b: 0, a: 255 )
     fn default() -> Color {
         Color { r: 0, g: 0, b: 0, a: 255 }
     }
