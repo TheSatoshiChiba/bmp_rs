@@ -1,0 +1,15 @@
+[package]
+name = "bmp_rs"
+version = "0.0.1"
+authors = [ "Daniel Drywa <daniel@drywa.me>" ]
+description = "A bitmap file reader and writer."
+#documentation = ""
+#homepage = ""
+#repository = ""
+readme = "README.md"
+keywords = [ "bitmap", "file", "reader", "writer", "graphics" ]
+categories = [ "multimedia", "multimedia::images", "parsing", "encoding" ]
+license = "Apache-2.0"
+include = [ "Cargo.toml", "src/**/*.rs", "README.md", "LICENSE" ]
+
+[dependencies]
