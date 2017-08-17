@@ -13,3 +13,4 @@ license = "Apache-2.0"
 include = [ "Cargo.toml", "src/**/*.rs", "README.md", "LICENSE" ]
 
 [dependencies]
+byteorder = "1.1.*"
