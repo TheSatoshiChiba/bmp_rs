@@ -53,13 +53,14 @@ impl Bitmap {
         Bitmap { width, height, data: data }
     }
 
-    fn read( input : &mut Read ) -> Result<Bitmap> {
+    pub fn read( input : &mut Read ) -> Result<Bitmap> {
         use bmp::{
             ReadBmpExt,
         };
 
-        let _ = input.read_file_header()?;
-        let _ = input.read_bitmap_header()?;
+        let fh = input.read_file_header()?;
+        let bh = input.read_bitmap_header()?;
+        let _ = input.read_color_palette( &fh, &bh )?;
 
         Ok( Bitmap::new( 0, 0 ) )
     }
@@ -67,28 +68,6 @@ impl Bitmap {
         // Read File header
 
 
-        /
-
-
-
-
-
-
-
-        // Read color palette entries
-        // TODO: Verify the actual amount of color palette entries
-        let entry_size = ( 1 << bpp ) as usize;
-        let mut palette = Vec::with_capacity( entry_size );
-        let mut entry : [u8; 3] = [0; 3];
-
-        for _ in 0..entry_size {
-            reader.read_exact( &mut entry )?;
-            palette.push( Color {
-                b : entry[0],
-                g : entry[1],
-                r : entry[2],
-                a : 255 } );
-        }
 
         // Read image data
         let size = ( width * height ) as usize;
