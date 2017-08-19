@@ -34,9 +34,9 @@ impl fmt::Display for Color {
 /// The bitmap type that is able to hold a vector of 32-bit color values.
 #[derive( Debug )]
 pub struct Bitmap {
-    width : i32,
-    height : i32,
-    data : Vec<Color>,
+    pub width : i32,
+    pub height : i32,
+    pub data : Vec<Color>,
 }
 
 impl Bitmap {
