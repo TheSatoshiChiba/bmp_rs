@@ -1,17 +1,15 @@
 //! # bmp_rs
 //!
 //! A bitmap reader and writer.
-use std::io::Read;
-use std::io::Result;
 use std::fmt;
 
 /// The color type that is able to hold 32-bit color values.
-#[derive( Debug, Eq, PartialEq )]
+#[derive( Debug, Eq, PartialEq, Copy, Clone )]
 pub struct Color {
-    r : u8,
-    g : u8,
-    b : u8,
-    a : u8,
+    pub r : u8,
+    pub g : u8,
+    pub b : u8,
+    pub a : u8,
 }
 
 impl Default for Color {
@@ -44,14 +42,86 @@ impl Bitmap {
     /// Creates a new bitmap filled with the given color.
     pub fn with_color( width : i32, height : i32, color : Color ) -> Bitmap {
         let len = ( width * height ) as usize;
-        let mut data = Vec::<Color>::with_capacity( len );
-
-        for _ in 0..data.capacity() {
-            data.push( Color { r: color.r, g: color.g, b: color.b, a: color.a } );
-        }
+        let data = vec![color; len];
 
         Bitmap { width, height, data: data }
     }
+
+    /*pub fn from_reader( reader : &mut Read ) -> Result<Bitmap> {
+        // Read File header
+        // TODO: This should be in it's own module that reads out different bitmap formats
+        if reader.read_u8()? != 0x42 || reader.read_u8()? != 0x4D {
+            return Err( Error::new(
+                ErrorKind::InvalidData,
+                "Invalid bitmap header" ) );
+        }
+
+        // TODO: Validate and make use of these to some degree
+        let _ = reader.read_u32::<LittleEndian>()?; // File size
+        let _ = reader.read_u16::<LittleEndian>()?; // Ignore reserved
+        let _ = reader.read_u32::<LittleEndian>()?; // Offset to bitmap data
+
+        // Read BMP Version 2 header
+        if reader.read_u32::<LittleEndian>()? != 12 { // Header size
+            return Err( Error::new(
+                ErrorKind::InvalidData,
+                "Invalid bitmap header size. Only BMP Version 2 is supported at this time." ) );
+        }
+
+        let width = reader.read_i16::<LittleEndian>()?; // Image width
+        let height = match reader.read_i16::<LittleEndian>()? { // Image height
+            h if h < 0 => -h,
+            h @ _ => h,
+        };
+
+        if reader.read_u16::<LittleEndian>()? != 1 { // Color planes
+            return Err( Error::new(
+                ErrorKind::InvalidData,
+                "Invalid bitmap header. Expected only 1 color plane." ) );
+        }
+
+        let bpp = match reader.read_u16::<LittleEndian>()? {
+            v @ 1
+            | v @ 4
+            | v @ 8
+            | v @ 24 => v,
+            _ => return Err( Error::new(
+                    ErrorKind::InvalidData,
+                    "Invalid bitmap header. Expected 1, 4, 8, or 24 bits per pixel." ) ),
+        };
+
+        // Read color palette entries
+        // TODO: Verify the actual amount of color palette entries
+        let entry_size = ( 1 << bpp ) as usize;
+        let mut palette = Vec::with_capacity( entry_size );
+        let mut entry : [u8; 3] = [0; 3];
+
+        for _ in 0..entry_size {
+            reader.read_exact( &mut entry )?;
+            palette.push( Color {
+                b : entry[0],
+                g : entry[1],
+                r : entry[2],
+                a : 255 } );
+        }
+
+        // Read image data
+        let size = ( width * height ) as usize;
+        let data = vec![Color::default(); size];
+
+        // TODO: Fix bitmap reading issue
+        for y in 0..height {
+            for x in 0..width {
+
+            }
+
+        }
+
+        Ok( Bitmap {
+            width : width as i32,
+            height : height as i32,
+            data } )
+    }*/
 }
 
 #[cfg( test )]
@@ -128,6 +198,16 @@ mod tests {
     }
 
     #[test]
+    fn color_copy_test() {
+        let mut a = Color::default();
+        let mut b = a;
+
+        a.r = 255;
+
+        assert_ne!( a.r, b.r );
+    }
+
+    #[test]
     fn bitmap_debug_format_test() {
         let s = fmt::format(
             format_args!(
@@ -159,7 +239,7 @@ mod tests {
     #[test]
     fn bitmap_with_color_test() {
         let color = Color { r: 0, g: 55, b: 155, a: 255 };
-        let bmp = Bitmap::with_color( 100, 200, Color { r: 0, g: 55, b: 155, a: 255 } );
+        let bmp = Bitmap::with_color( 100, 200, color );
 
         assert_eq!( 100, bmp.width );
         assert_eq!( 200, bmp.height );
