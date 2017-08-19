@@ -1,11 +1,11 @@
 [package]
 name = "bmp_rs"
-version = "0.0.0"
+version = "0.0.1"
 authors = [ "Daniel Drywa <daniel@drywa.me>" ]
-description = "Reserved for later use. Bitmap reader and writer."
+description = "Bitmap reader and writer. (Still in the early stages)"
 #documentation = ""
 homepage = "http://www.drywa.me"
-#repository = ""
+repository = "https://github.com/TheSatoshiChiba/bmp_rs"
 readme = "README.md"
 keywords = [ "bitmap", "file", "reader", "writer", "graphics" ]
 categories = [ "multimedia", "multimedia::images", "parsing", "encoding" ]
