@@ -1,7 +1,13 @@
 //! # bmp_rs
 //!
 //! A bitmap reader and writer.
+mod bmp;
+
 use std::fmt;
+use std::io::{
+    Read,
+    Result,
+};
 
 /// The color type that is able to hold 32-bit color values.
 #[derive( Debug, Eq, PartialEq, Copy, Clone )]
@@ -47,48 +53,27 @@ impl Bitmap {
         Bitmap { width, height, data: data }
     }
 
+    fn read( input : &mut Read ) -> Result<Bitmap> {
+        use bmp::{
+            ReadBmpExt,
+        };
+
+        let _ = input.read_file_header()?;
+        let _ = input.read_bitmap_header()?;
+
+        Ok( Bitmap::new( 0, 0 ) )
+    }
     /*pub fn from_reader( reader : &mut Read ) -> Result<Bitmap> {
         // Read File header
-        // TODO: This should be in it's own module that reads out different bitmap formats
-        if reader.read_u8()? != 0x42 || reader.read_u8()? != 0x4D {
-            return Err( Error::new(
-                ErrorKind::InvalidData,
-                "Invalid bitmap header" ) );
-        }
 
-        // TODO: Validate and make use of these to some degree
-        let _ = reader.read_u32::<LittleEndian>()?; // File size
-        let _ = reader.read_u16::<LittleEndian>()?; // Ignore reserved
-        let _ = reader.read_u32::<LittleEndian>()?; // Offset to bitmap data
 
-        // Read BMP Version 2 header
-        if reader.read_u32::<LittleEndian>()? != 12 { // Header size
-            return Err( Error::new(
-                ErrorKind::InvalidData,
-                "Invalid bitmap header size. Only BMP Version 2 is supported at this time." ) );
-        }
+        /
 
-        let width = reader.read_i16::<LittleEndian>()?; // Image width
-        let height = match reader.read_i16::<LittleEndian>()? { // Image height
-            h if h < 0 => -h,
-            h @ _ => h,
-        };
 
-        if reader.read_u16::<LittleEndian>()? != 1 { // Color planes
-            return Err( Error::new(
-                ErrorKind::InvalidData,
-                "Invalid bitmap header. Expected only 1 color plane." ) );
-        }
 
-        let bpp = match reader.read_u16::<LittleEndian>()? {
-            v @ 1
-            | v @ 4
-            | v @ 8
-            | v @ 24 => v,
-            _ => return Err( Error::new(
-                    ErrorKind::InvalidData,
-                    "Invalid bitmap header. Expected 1, 4, 8, or 24 bits per pixel." ) ),
-        };
+
+
+
 
         // Read color palette entries
         // TODO: Verify the actual amount of color palette entries
