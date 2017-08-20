@@ -9,7 +9,7 @@ This create is in its early stages of development and not all features are fully
 - [x] Common Color data type
 - [x] Common Bitmap data type
 - [ ] Microsoft BMP Version 1 Support (If there is interest)
-- [ ] Microsoft BMP Version 2 support
+- [x] Microsoft BMP Version 2 support
 - [ ] Microsoft BMP Version 3 support
 - [ ] Microsoft BMP Version 4 support
 - [ ] Microsoft BMP Version 5 Support
