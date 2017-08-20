@@ -60,32 +60,14 @@ impl Bitmap {
 
         let fh = input.read_file_header()?;
         let bh = input.read_bitmap_header()?;
-        let _ = input.read_color_palette( &fh, &bh )?;
-
-        Ok( Bitmap::new( 0, 0 ) )
-    }
-    /*pub fn from_reader( reader : &mut Read ) -> Result<Bitmap> {
-        // Read File header
-
-
-
-        // Read image data
-        let size = ( width * height ) as usize;
-        let data = vec![Color::default(); size];
-
-        // TODO: Fix bitmap reading issue
-        for y in 0..height {
-            for x in 0..width {
-
-            }
-
-        }
+        let cp = input.read_color_palette( &fh, &bh )?;
+        let data = input.read_pixel_data( &bh, &cp )?;
 
         Ok( Bitmap {
-            width : width as i32,
-            height : height as i32,
+            width : bh.width,
+            height : bh.height,
             data } )
-    }*/
+    }
 }
 
 #[cfg( test )]

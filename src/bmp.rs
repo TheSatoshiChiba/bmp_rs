@@ -24,9 +24,20 @@ pub struct FileHeader {
 
 pub struct BitmapHeader {
     size : u32,
-    width : i16,
-    height : i16,
-    bpp : u16,
+    pub width : i32,
+    pub height : i32,
+    bpp : i32,
+    direction : i8,
+}
+
+impl BitmapHeader {
+    fn offset( &self, y : usize ) -> usize {
+        match self.direction {
+            -1 => (y * self.width as usize ),
+            1 => ( ( self.height as usize - 1 ) * self.width as usize ) - (y * self.width as usize ),
+            _ => panic!( "Invalid direction!" ),
+        }
+    }
 }
 
 pub trait ReadBmpExt : Read {
@@ -38,7 +49,7 @@ pub trait ReadBmpExt : Read {
         }
 
         let size = self.read_u32::<LittleEndian>()?; // File size
-        let _ = self.read_u16::<LittleEndian>()?; // Reserved fields
+        let _ = self.read_u32::<LittleEndian>()?; // Reserved fields
         let offset = self.read_u32::<LittleEndian>()?; // Offset to bitmap data
 
         Ok( FileHeader { size, offset } )
@@ -47,19 +58,23 @@ pub trait ReadBmpExt : Read {
     fn read_bitmap_header( &mut self ) -> Result<BitmapHeader> {
         // Read BMP Version 2 header
         let size = self.read_u32::<LittleEndian>()?;
+        println!("BMP HEADER SIZE {:?}",size );
         if size != 12 { // Header size
             return Err( Error::new(
                 ErrorKind::InvalidData,
                 "Invalid bitmap header size. Only BMP Version 2 is supported at this time." ) );
         }
 
-        let width = self.read_i16::<LittleEndian>()?
-            .checked_abs()
-            .ok_or( Error::new( ErrorKind::InvalidData, "Invalid bitmap width." ) )?;
+        let w = self.read_i16::<LittleEndian>()?;
+        let h = self.read_i16::<LittleEndian>()?;
 
-        let height = self.read_i16::<LittleEndian>()?
-            .checked_abs()
-            .ok_or( Error::new( ErrorKind::InvalidData, "Invalid bitmap height." ) )?;
+        let width = w.checked_abs().ok_or(
+            Error::new( ErrorKind::InvalidData, "Invalid bitmap width." ) )? as i32;
+
+        let height = h.checked_abs().ok_or(
+            Error::new( ErrorKind::InvalidData, "Invalid bitmap height." ) )? as i32;
+
+        let direction = h.signum() as i8;
 
         if self.read_u16::<LittleEndian>()? != 1 { // Color planes
             return Err( Error::new(
@@ -71,13 +86,13 @@ pub trait ReadBmpExt : Read {
             v @ 1
             | v @ 4
             | v @ 8
-            | v @ 24 => v,
+            | v @ 24 => v as i32,
             _ => return Err( Error::new(
                     ErrorKind::InvalidData,
                     "Invalid bitmap bits per pixel." ) ),
         };
 
-        Ok( BitmapHeader { size, width, height, bpp } )
+        Ok( BitmapHeader { size, width, height, bpp, direction } )
     }
 
     fn read_color_palette(
@@ -100,6 +115,83 @@ pub trait ReadBmpExt : Read {
         }
 
         Ok( palette )
+    }
+
+    fn read_pixel_data( &mut self, bmp_header : &BitmapHeader, palette : &[Color] ) -> Result<Vec<Color>> {
+        let size = ( bmp_header.width * bmp_header.height ) as usize;
+        let mut pixels = vec![Color::default(); size];
+
+        let line_width = ( ( bmp_header.width * bmp_header.bpp + 31 ) / 32 ) * 4;
+        let mut line = vec![0 as u8; line_width as usize];
+
+        for y in 0..bmp_header.height {
+            self.read_exact( &mut line )?; // read whole line
+
+            let offset = bmp_header.offset( y as usize );
+            let mut index = offset;
+            let mut range = 0..line_width;
+            loop {
+                match range.next() {
+                    Some( mut x ) => {
+                        match bmp_header.bpp {
+                            1 => {
+                                for i in (0..8).rev() {
+                                    pixels[ index ] = palette[((line[ x as usize ] >> i ) & 0x01) as usize];
+                                    index += 1;
+
+                                    if i < 7 {
+                                        if index >= offset + bmp_header.width as usize {
+                                            break;
+                                        }
+                                    }
+                                }
+                            },
+                            4 => {
+                                pixels[ index ] = palette[((line[ x as usize ] >> 4 ) & 0x0F) as usize];
+                                index += 1;
+
+                                if index >= offset + bmp_header.width as usize {
+                                    break;
+                                }
+
+                                pixels[ index ] = palette[(line[ x as usize ] & 0x0F) as usize];
+                                index += 1;
+                            },
+                            8 => {
+                                pixels[ index ] = palette[line[ x as usize ] as usize];
+                                index += 1;
+                            },
+                            24 => {
+                                let b = line[ x as usize ];
+                                if let Some( z ) = range.next() {
+                                    x = z;
+                                } else { break }
+
+                                let g = line[ x as usize ];
+                                if let Some( z ) = range.next() {
+                                    x = z;
+                                } else { break }
+
+                                let r = line[ x as usize ];
+
+                                pixels[ index ] = Color { r, g, b, a : 255 };
+                                index += 1;
+                            },
+                            _=> return Err( Error::new(
+                                ErrorKind::InvalidData,
+                                "Invalid bitmap bits per pixel." ) ),
+                        }
+                    },
+                    None => break,
+                }
+
+                if index >= offset + bmp_header.width as usize {
+                    break;
+                }
+            }
+        }
+
+        Ok( pixels )
     }
 }
 
