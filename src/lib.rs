@@ -1,201 +1,199 @@
 //! # bmp_rs
 //!
 //! A bitmap reader and writer.
-mod bmp;
+extern crate byteorder;
 
-use std::fmt;
 use std::io::{
-    Read,
     Result,
+    Error,
+    Read,
+    ErrorKind,
 };
 
-/// The color type that is able to hold 32-bit color values.
-#[derive( Debug, Eq, PartialEq, Copy, Clone )]
-pub struct Color {
-    pub r : u8,
-    pub g : u8,
-    pub b : u8,
-    pub a : u8,
+use byteorder::{
+    ReadBytesExt,
+    LittleEndian,
+};
+
+// struct BmpInfo {
+//     file_size : u32,
+//     reserved : u32,
+//     offset : u32,
+//     header_size : u32,
+//     width : i32,
+//     height : i32,
+//     bpp : i32,
+//     planes : u16,
+//     direction : i8,
+//     palette : Vec<u8>,
+// }
+
+#[derive( Clone, Copy )]
+struct Color {
+    r : u8,
+    g : u8,
+    b : u8,
+    a : u8,
 }
 
-impl Default for Color {
-    /// Returns a default color with values ( r: 0, g: 0, b: 0, a: 255 ).
-    fn default() -> Color {
-        Color { r: 0, g: 0, b: 0, a: 255 }
-    }
+pub trait BitmapFactory {
+    fn create_bitmap( width : i32, height : i32 ) -> Self;
+    fn set_pixel( &mut self, x : i32, y : i32, r : u8, g : u8, b : u8, a : u8 );
 }
 
-impl fmt::Display for Color {
-    fn fmt( &self, f : &mut fmt::Formatter ) -> fmt::Result {
-        write!( f, "({}, {}, {}, {})", self.r, self.g, self.b, self.a )
-    }
-}
-
-/// The bitmap type that is able to hold a vector of 32-bit color values.
-#[derive( Debug )]
-pub struct Bitmap {
-    pub width : i32,
-    pub height : i32,
-    pub data : Vec<Color>,
-}
-
-impl Bitmap {
-    /// Creates a new bitmap filled with black.
-    pub fn new( width : i32, height : i32 ) -> Bitmap {
-        Bitmap::with_color( width, height, Color::default() )
+pub fn decode<TFactory : BitmapFactory>( input : &mut Read ) -> Result<TFactory> {
+    // Read file header
+    if input.read_u8()? != 0x42 || input.read_u8()? != 0x4D {
+        return Err( Error::new(
+            ErrorKind::InvalidData,
+            "Invalid bitmap header." ) );
     }
 
-    /// Creates a new bitmap filled with the given color.
-    pub fn with_color( width : i32, height : i32, color : Color ) -> Bitmap {
-        let len = ( width * height ) as usize;
-        let data = vec![color; len];
+    let file_size = input.read_u32::<LittleEndian>()?; // File size
+    let reserved = input.read_u32::<LittleEndian>()?; // Reserved fields
+    let offset = input.read_u32::<LittleEndian>()?; // Offset to bitmap data
 
-        Bitmap { width, height, data: data }
+    // Read BMP Version 2 header
+    let header_size = input.read_u32::<LittleEndian>()?;
+    if header_size != 12 { // Header size
+        return Err( Error::new(
+            ErrorKind::InvalidData,
+            "Invalid bitmap header size. Only BMP Version 2 is supported at this time." ) );
     }
 
-    pub fn read( input : &mut Read ) -> Result<Bitmap> {
-        use bmp::{
-            ReadBmpExt,
+    let w = input.read_i16::<LittleEndian>()?;
+    let h = input.read_i16::<LittleEndian>()?;
+
+    let width = w.checked_abs().ok_or(
+        Error::new( ErrorKind::InvalidData, "Invalid bitmap width." ) )? as i32;
+
+    let height = h.checked_abs().ok_or(
+        Error::new( ErrorKind::InvalidData, "Invalid bitmap height." ) )? as i32;
+
+    let direction = h.signum() as i8;
+
+    if input.read_u16::<LittleEndian>()? != 1 { // Color planes
+        return Err( Error::new(
+            ErrorKind::InvalidData,
+            "Invalid bitmap color plane." ) );
+    }
+
+    let bpp = match input.read_u16::<LittleEndian>()? {
+        v @ 1
+        | v @ 4
+        | v @ 8
+        | v @ 24 => v as i32,
+        _ => return Err( Error::new(
+                ErrorKind::InvalidData,
+                "Invalid bitmap bits per pixel." ) ),
+    };
+
+    // Read palette
+    let palette_size = ( ( offset - 14 - header_size ) / 3 ) as usize;
+    let mut palette = Vec::with_capacity( palette_size );
+    let mut palette_buffer : [u8; 3] = [0; 3];
+
+    for _ in 0..palette_size {
+        input.read_exact( &mut palette_buffer )?;
+
+        palette.push( Color {
+            r : palette_buffer[2],
+            g : palette_buffer[1],
+            b : palette_buffer[0],
+            a : 255 } );
+    }
+
+    let mut bitmap : TFactory = BitmapFactory::create_bitmap( width, height );
+    // let pixel_size = ( width * height ) as usize;
+    // let mut pixels = vec![ Color { r : 0, g : 0, b : 0, a : 255 }; pixel_size];
+
+    let line_width = ( ( width * bpp + 31 ) / 32 ) * 4;
+    let mut line_buffer = vec![0 as u8; line_width as usize];
+
+    for y in 0..height {
+        input.read_exact( &mut line_buffer )?; // read whole line
+
+        let y = match direction {
+            -1 => y,
+            1 => height - y - 1,
+            _ => panic!( "Invalid direction!" ),
         };
 
-        let fh = input.read_file_header()?;
-        let bh = input.read_bitmap_header()?;
-        let cp = input.read_color_palette( &fh, &bh )?;
-        let data = input.read_pixel_data( &bh, &cp )?;
+        let mut index = 0;
+        let mut range = 0..line_width;
+        loop {
+            match range.next() {
+                Some( mut x ) => {
+                    match bpp {
+                        1 => {
+                            for i in (0..8).rev() {
+                                let c = palette[((line_buffer[ x as usize ] >> i ) & 0x01) as usize];
+                                bitmap.set_pixel( index as i32, y, c.r, c.g, c.b, c.a);
 
-        Ok( Bitmap {
-            width : bh.width,
-            height : bh.height,
-            data } )
+                                index += 1;
+
+                                if i < 7 {
+                                    if index >= width as usize {
+                                        break;
+                                    }
+                                }
+                            }
+                        },
+                        4 => {
+                            let c1 = palette[((line_buffer[ x as usize ] >> 4 ) & 0x0F) as usize];
+                            bitmap.set_pixel( index as i32, y, c1.r, c1.g, c1.b, c1.a);
+
+                            index += 1;
+
+                            if index >= width as usize {
+                                break;
+                            }
+
+                            let c2 = palette[(line_buffer[ x as usize ] & 0x0F) as usize];
+                            bitmap.set_pixel( index as i32, y, c2.r, c2.g, c2.b, c2.a);
+
+                            index += 1;
+                        },
+                        8 => {
+                            let c = palette[line_buffer[ x as usize ] as usize];
+                            bitmap.set_pixel( index as i32, y, c.r, c.g, c.b, c.a);
+
+                            index += 1;
+                        },
+                        24 => {
+                            let b = line_buffer[ x as usize ];
+                            if let Some( z ) = range.next() {
+                                x = z;
+                            } else { break }
+
+                            let g = line_buffer[ x as usize ];
+                            if let Some( z ) = range.next() {
+                                x = z;
+                            } else { break }
+
+                            let r = line_buffer[ x as usize ];
+
+                            bitmap.set_pixel( index as i32, y, r, g, b, 255);
+
+                            index += 1;
+                        },
+                        _=> return Err( Error::new(
+                            ErrorKind::InvalidData,
+                            "Invalid bitmap bits per pixel." ) ),
+                    }
+                },
+                None => break,
+            }
+
+            if index >= width as usize {
+                break;
+            }
+        }
     }
+
+    Ok( bitmap )
 }
 
 #[cfg( test )]
 mod tests {
-    use std::fmt;
-
-    use super::Color;
-    use super::Bitmap;
-
-    #[test]
-    fn color_default_test() {
-        assert_eq!( Color { r: 0, g: 0, b: 0, a: 255 }, Color::default() );
-    }
-
-    #[test]
-    fn color_equality_test() {
-        let a1 = Color { r: 0, g: 0, b: 0, a: 0 };
-        let a2 = Color { r: 0, g: 0, b: 0, a: 0 };
-        let b1 = Color { r: 255, g: 0, b: 0, a: 0 };
-        let b2 = Color { r: 255, g: 0, b: 0, a: 0 };
-        let c1 = Color { r: 0, g: 255, b: 0, a: 0 };
-        let c2 = Color { r: 0, g: 255, b: 0, a: 0 };
-        let d1 = Color { r: 0, g: 0, b: 255, a: 0 };
-        let d2 = Color { r: 0, g: 0, b: 255, a: 0 };
-        let e1 = Color { r: 0, g: 0, b: 0, a: 255 };
-        let e2 = Color { r: 0, g: 0, b: 0, a: 255 };
-
-        assert_eq!( a1, a1 );
-        assert_eq!( a1, a2 );
-        assert_ne!( a1, b1 );
-        assert_ne!( a1, c1 );
-        assert_ne!( a1, d1 );
-        assert_ne!( a1, e1 );
-
-        assert_eq!( b1, b1 );
-        assert_eq!( b1, b2 );
-        assert_ne!( b1, a1 );
-        assert_ne!( b1, c1 );
-        assert_ne!( b1, d1 );
-        assert_ne!( b1, e1 );
-
-        assert_eq!( c1, c1 );
-        assert_eq!( c1, c2 );
-        assert_ne!( c1, a1 );
-        assert_ne!( c1, b1 );
-        assert_ne!( c1, d1 );
-        assert_ne!( c1, e1 );
-
-        assert_eq!( d1, d1 );
-        assert_eq!( d1, d2 );
-        assert_ne!( d1, a1 );
-        assert_ne!( d1, b1 );
-        assert_ne!( d1, c1 );
-        assert_ne!( d1, e1 );
-
-        assert_eq!( e1, e1 );
-        assert_eq!( e1, e2 );
-        assert_ne!( e1, a1 );
-        assert_ne!( e1, b1 );
-        assert_ne!( e1, c1 );
-        assert_ne!( e1, d1 );
-    }
-
-    #[test]
-    fn color_debug_format_test() {
-        let s = fmt::format( format_args!( "{:?}", Color { r: 0, g: 55, b: 155, a: 255 } ) );
-        assert_eq!( "Color { r: 0, g: 55, b: 155, a: 255 }", s );
-    }
-
-    #[test]
-    fn color_display_test() {
-        let s = fmt::format( format_args!( "{}", Color { r: 0, g: 55, b: 155, a: 255 } ) );
-        assert_eq!( "(0, 55, 155, 255)", s );
-    }
-
-    #[test]
-    fn color_copy_test() {
-        let mut a = Color::default();
-        let mut b = a;
-
-        a.r = 255;
-
-        assert_ne!( a.r, b.r );
-    }
-
-    #[test]
-    fn bitmap_debug_format_test() {
-        let s = fmt::format(
-            format_args!(
-                "{:?}",
-                Bitmap {
-                    width: 100,
-                    height: 200,
-                    data: Vec::new() } ) );
-
-        assert_eq!( "Bitmap { width: 100, height: 200, data: [] }", s );
-    }
-
-    #[test]
-    fn bitmap_new_test() {
-        let bmp = Bitmap::new( 100, 200 );
-
-        assert_eq!( 100, bmp.width );
-        assert_eq!( 200, bmp.height );
-
-        let len = ( bmp.width * bmp.height ) as usize;
-
-        assert_eq!( len, bmp.data.len() );
-
-        for i in 0..len {
-            assert_eq!( Color::default(), bmp.data[i] );
-        }
-    }
-
-    #[test]
-    fn bitmap_with_color_test() {
-        let color = Color { r: 0, g: 55, b: 155, a: 255 };
-        let bmp = Bitmap::with_color( 100, 200, color );
-
-        assert_eq!( 100, bmp.width );
-        assert_eq!( 200, bmp.height );
-
-        let len = ( bmp.width * bmp.height ) as usize;
-
-        assert_eq!( len, bmp.data.len() );
-
-        for i in 0..len {
-            assert_eq!( color, bmp.data[i] );
-        }
-    }
 }
