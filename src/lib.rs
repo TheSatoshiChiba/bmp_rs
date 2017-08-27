@@ -1,39 +1,68 @@
 //! # bmp_rs
 //!
-//! A bitmap reader and writer.
+//! A bmp (bitmap) file decoder.
 extern crate byteorder;
 
-use std::io::{
-    Result,
-    Error,
-    Read,
-    ErrorKind,
-};
+use std::io;
+use std::error;
+use std::fmt;
 
 use byteorder::{
     ReadBytesExt,
     LittleEndian,
 };
 
-// struct BmpInfo {
-//     file_size : u32,
-//     reserved : u32,
-//     offset : u32,
-//     header_size : u32,
-//     width : i32,
-//     height : i32,
-//     bpp : i32,
-//     planes : u16,
-//     direction : i8,
-//     palette : Vec<u8>,
-// }
+
+#[derive( Debug )]
+pub enum DecodingError {
+    IOError( std::io::Error ),
+}
+
+pub type Result<T> = std::result::Result<T, DecodingError>;
+
+impl DecodingError {
+    fn new_io( message : &str ) -> DecodingError {
+        DecodingError::IOError(
+            io::Error::new( io::ErrorKind::InvalidData, message ) )
+    }
+}
+
+impl fmt::Display for DecodingError {
+    fn fmt( &self, formatter: &mut fmt::Formatter ) -> fmt::Result {
+        match *self {
+            DecodingError::IOError( ref error )
+                => write!( formatter, "IO error: {}", *error ),
+        }
+    }
+}
+
+impl error::Error for DecodingError {
+    fn description( &self ) -> &str {
+        match *self {
+            DecodingError::IOError( ref error )
+                => error.description(),
+        }
+    }
+
+    fn cause( &self ) -> Option<&error::Error> {
+        match *self {
+            DecodingError::IOError( ref error ) => Some( error ),
+        }
+    }
+}
+
+impl From<std::io::Error> for DecodingError {
+    fn from( error: std::io::Error ) -> Self {
+        DecodingError::IOError( error )
+    }
+}
 
 #[derive( Clone, Copy )]
 struct Color {
-    r : u8,
-    g : u8,
-    b : u8,
-    a : u8,
+    r: u8,
+    g: u8,
+    b: u8,
+    a: u8,
 }
 
 pub trait BMPDecoder {
@@ -44,41 +73,38 @@ pub trait BMPDecoder {
     fn build( &mut self ) -> Result<Self::TResult>;
 }
 
-pub fn decode<TDecoder: BMPDecoder>( input: &mut Read, mut decoder: TDecoder ) -> Result<TDecoder::TResult> {
+pub fn decode<TDecoder: BMPDecoder>(
+    input: &mut io::Read, mut decoder: TDecoder ) -> Result<TDecoder::TResult> {
+
     // Read file header
     if input.read_u8()? != 0x42 || input.read_u8()? != 0x4D {
-        return Err( Error::new(
-            ErrorKind::InvalidData,
-            "Invalid bitmap header." ) );
+        return Err( DecodingError::new_io( "Invalid bitmap header." ) );
     }
 
-    let file_size = input.read_u32::<LittleEndian>()?; // File size
-    let reserved = input.read_u32::<LittleEndian>()?; // Reserved fields
+    let _ = input.read_u32::<LittleEndian>()?; // File size
+    let _ = input.read_u32::<LittleEndian>()?; // Reserved fields
     let offset = input.read_u32::<LittleEndian>()?; // Offset to bitmap data
 
     // Read BMP Version 2 header
     let header_size = input.read_u32::<LittleEndian>()?;
     if header_size != 12 { // Header size
-        return Err( Error::new(
-            ErrorKind::InvalidData,
-            "Invalid bitmap header size. Only BMP Version 2 is supported at this time." ) );
+        return Err( DecodingError::new_io(
+            "Invalid bitmap header. Only BMP V2 is supported at this time." ) );
     }
 
     let w = input.read_i16::<LittleEndian>()?;
     let h = input.read_i16::<LittleEndian>()?;
 
     let width = w.checked_abs().ok_or(
-        Error::new( ErrorKind::InvalidData, "Invalid bitmap width." ) )? as i32;
+        DecodingError::new_io( "Invalid bitmap width." ) )? as i32;
 
     let height = h.checked_abs().ok_or(
-        Error::new( ErrorKind::InvalidData, "Invalid bitmap height." ) )? as i32;
+        DecodingError::new_io( "Invalid bitmap height." ) )? as i32;
 
     let direction = h.signum() as i8;
 
     if input.read_u16::<LittleEndian>()? != 1 { // Color planes
-        return Err( Error::new(
-            ErrorKind::InvalidData,
-            "Invalid bitmap color plane." ) );
+        return Err( DecodingError::new_io( "Invalid bitmap color plane." ) );
     }
 
     let bpp = match input.read_u16::<LittleEndian>()? {
@@ -86,9 +112,8 @@ pub fn decode<TDecoder: BMPDecoder>( input: &mut Read, mut decoder: TDecoder ) -
         | v @ 4
         | v @ 8
         | v @ 24 => v as i32,
-        _ => return Err( Error::new(
-                ErrorKind::InvalidData,
-                "Invalid bitmap bits per pixel." ) ),
+        _ => return Err(
+            DecodingError::new_io( "Invalid bitmap bits per pixel." ) ),
     };
 
     // Read palette
@@ -119,7 +144,7 @@ pub fn decode<TDecoder: BMPDecoder>( input: &mut Read, mut decoder: TDecoder ) -
         let y = match direction {
             -1 => y,
             1 => height - y - 1,
-            _ => panic!( "Invalid direction!" ),
+            _ => return Err( DecodingError::new_io( "Invalid direction!" ) ),
         };
 
         let mut index = 0;
@@ -180,9 +205,8 @@ pub fn decode<TDecoder: BMPDecoder>( input: &mut Read, mut decoder: TDecoder ) -
 
                             index += 1;
                         },
-                        _=> return Err( Error::new(
-                            ErrorKind::InvalidData,
-                            "Invalid bitmap bits per pixel." ) ),
+                        _=> return Err(
+                            DecodingError::new_io( "Invalid bitmap bits per pixel." ) ),
                     }
                 },
                 None => break,
@@ -199,4 +223,47 @@ pub fn decode<TDecoder: BMPDecoder>( input: &mut Read, mut decoder: TDecoder ) -
 
 #[cfg( test )]
 mod tests {
+    use std::io;
+    use std::error::Error;
+
+    use super::DecodingError;
+
+    #[test]
+    fn decoding_error_new_io_test() {
+        let error = DecodingError::new_io( "This is an error!" );
+        let io_error = io::Error::new(
+            io::ErrorKind::InvalidData, "This is an error!" );
+
+        match error {
+            DecodingError::IOError( error ) => {
+                assert_eq!(
+                    error.description(),
+                    io_error.description() );
+                assert_eq!(
+                    error.kind(),
+                    io_error.kind() );
+            },
+            _ => panic!( "No IO Error" ),
+        }
+    }
+
+    #[test]
+    fn decoding_error_fmt_test() {
+        let error = DecodingError::new_io( "FooBar!" );
+
+        assert_eq!( "IO error: FooBar!", format!( "{}", error ) );
+    }
+
+    #[test]
+    fn decoding_error_from_io_error_test() {
+        let io_error = io::Error::new(
+            io::ErrorKind::InvalidData, "This is an error!" );
+
+        let error : DecodingError = io_error.into();
+
+        assert!( match error {
+            DecodingError::IOError( error ) => true,
+            _ => false,
+        } );
+    }
 }
