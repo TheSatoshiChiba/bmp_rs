@@ -1,8 +1,8 @@
 [package]
 name = "bmp_rs"
-version = "0.0.1"
+version = "0.0.2"
 authors = [ "Daniel Drywa <daniel@drywa.me>" ]
-description = "Bitmap reader and writer. (Still in the early stages)"
+description = "Bitmap decoder. (Still in the early stages)"
 #documentation = ""
 homepage = "http://www.drywa.me"
 repository = "https://github.com/TheSatoshiChiba/bmp_rs"
