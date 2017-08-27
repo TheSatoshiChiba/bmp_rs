@@ -1,6 +1,44 @@
 //! # bmp_rs
 //!
 //! A bmp (bitmap) file decoder.
+//!
+//! ## Example
+//!
+//! ```
+//! use std::fs::File;
+//! use bmp_rs::{
+//!     Result,
+//!     BMPDecorder,
+//! };
+//!
+//! struct ImageDecoder {
+//!     // your builder type that is able to construct an image
+//! }
+//!
+//!
+//! impl BMPDecoder for ImageDecoder {
+//!     type TResult = MyImageType; // Your image type
+//!
+//!     fn set_size( &mut self, width: u32, height: u32 ) {
+//!         // Set image size
+//!     }
+//!
+//!     fn set_pixel( &mut self, x: u32, y: u32, r: u8, g: u8, b: u8, a: u8 ) {
+//!         // Set a specific pixel within that image to the given color
+//!     }
+//!
+//!     fn build( &mut self ) -> Result<Self::TResult> {
+//!         // Build and return your final image
+//!     }
+//! }
+//!
+//! fn main() {
+//!     let mut file = File::open( "image.bmp" ).unwrap();
+//!     let image = bmp_rs::decode( &mut file, YourImageDecoderInstance );
+//!     // Do something with your image
+//! }
+//! ```
+//!
 extern crate byteorder;
 
 use std::io;
