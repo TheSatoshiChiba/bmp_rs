@@ -36,12 +36,15 @@ struct Color {
     a : u8,
 }
 
-pub trait BitmapFactory {
-    fn create_bitmap( width : i32, height : i32 ) -> Self;
-    fn set_pixel( &mut self, x : i32, y : i32, r : u8, g : u8, b : u8, a : u8 );
+pub trait BMPDecoder {
+    type TResult;
+
+    fn set_size( &mut self, width: u32, height: u32 );
+    fn set_pixel( &mut self, x: u32, y: u32, r: u8, g: u8, b: u8, a: u8 );
+    fn build( &mut self ) -> Result<Self::TResult>;
 }
 
-pub fn decode<TFactory : BitmapFactory>( input : &mut Read ) -> Result<TFactory> {
+pub fn decode<TDecoder: BMPDecoder>( input: &mut Read, mut decoder: TDecoder ) -> Result<TDecoder::TResult> {
     // Read file header
     if input.read_u8()? != 0x42 || input.read_u8()? != 0x4D {
         return Err( Error::new(
@@ -103,7 +106,7 @@ pub fn decode<TFactory : BitmapFactory>( input : &mut Read ) -> Result<TFactory>
             a : 255 } );
     }
 
-    let mut bitmap : TFactory = BitmapFactory::create_bitmap( width, height );
+    decoder.set_size( width as u32, height as u32 );
     // let pixel_size = ( width * height ) as usize;
     // let mut pixels = vec![ Color { r : 0, g : 0, b : 0, a : 255 }; pixel_size];
 
@@ -128,7 +131,7 @@ pub fn decode<TFactory : BitmapFactory>( input : &mut Read ) -> Result<TFactory>
                         1 => {
                             for i in (0..8).rev() {
                                 let c = palette[((line_buffer[ x as usize ] >> i ) & 0x01) as usize];
-                                bitmap.set_pixel( index as i32, y, c.r, c.g, c.b, c.a);
+                                decoder.set_pixel( index as u32, y as u32, c.r, c.g, c.b, c.a);
 
                                 index += 1;
 
@@ -141,7 +144,7 @@ pub fn decode<TFactory : BitmapFactory>( input : &mut Read ) -> Result<TFactory>
                         },
                         4 => {
                             let c1 = palette[((line_buffer[ x as usize ] >> 4 ) & 0x0F) as usize];
-                            bitmap.set_pixel( index as i32, y, c1.r, c1.g, c1.b, c1.a);
+                            decoder.set_pixel( index as u32, y as u32, c1.r, c1.g, c1.b, c1.a);
 
                             index += 1;
 
@@ -150,13 +153,13 @@ pub fn decode<TFactory : BitmapFactory>( input : &mut Read ) -> Result<TFactory>
                             }
 
                             let c2 = palette[(line_buffer[ x as usize ] & 0x0F) as usize];
-                            bitmap.set_pixel( index as i32, y, c2.r, c2.g, c2.b, c2.a);
+                            decoder.set_pixel( index as u32, y as u32, c2.r, c2.g, c2.b, c2.a);
 
                             index += 1;
                         },
                         8 => {
                             let c = palette[line_buffer[ x as usize ] as usize];
-                            bitmap.set_pixel( index as i32, y, c.r, c.g, c.b, c.a);
+                            decoder.set_pixel( index as u32, y as u32, c.r, c.g, c.b, c.a);
 
                             index += 1;
                         },
@@ -173,7 +176,7 @@ pub fn decode<TFactory : BitmapFactory>( input : &mut Read ) -> Result<TFactory>
 
                             let r = line_buffer[ x as usize ];
 
-                            bitmap.set_pixel( index as i32, y, r, g, b, 255);
+                            decoder.set_pixel( index as u32, y as u32, r, g, b, 255);
 
                             index += 1;
                         },
@@ -191,7 +194,7 @@ pub fn decode<TFactory : BitmapFactory>( input : &mut Read ) -> Result<TFactory>
         }
     }
 
-    Ok( bitmap )
+    decoder.build()
 }
 
 #[cfg( test )]
