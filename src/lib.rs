@@ -111,6 +111,56 @@ pub trait BMPDecoder {
     fn build( &mut self ) -> Result<Self::TResult>;
 }
 
+struct BMPHeader {
+    size: u32,
+    width: u32,
+    height: u32,
+    direction: i8,
+    bpp: u32,
+}
+
+impl BMPHeader {
+    fn from_reader( input: &mut io::Read ) -> Result<BMPHeader> {
+        let size = input.read_u32::<LittleEndian>()?;
+        if size != 12 { // Header size
+            return Err( DecodingError::new_io(
+                "Invalid bitmap header. Only BMP V2 is supported at this time." ) );
+        }
+
+        let w = input.read_i16::<LittleEndian>()?;
+        let h = input.read_i16::<LittleEndian>()?;
+
+        let width = w.checked_abs().ok_or(
+            DecodingError::new_io( "Invalid bitmap width." ) )? as u32;
+
+        let height = h.checked_abs().ok_or(
+            DecodingError::new_io( "Invalid bitmap height." ) )? as u32;
+
+        let direction = h.signum() as i8;
+
+        if input.read_u16::<LittleEndian>()? != 1 { // Color planes
+            return Err( DecodingError::new_io( "Invalid bitmap color plane." ) );
+        }
+
+        let bpp = match input.read_u16::<LittleEndian>()? {
+            v @ 1
+            | v @ 4
+            | v @ 8
+            | v @ 24 => v as u32,
+            _ => return Err(
+                DecodingError::new_io( "Invalid bitmap bits per pixel." ) ),
+        };
+
+        Ok( BMPHeader {
+            size,
+            width,
+            height,
+            direction,
+            bpp
+        } )
+    }
+}
+
 pub fn decode<TDecoder: BMPDecoder>(
     input: &mut io::Read, mut decoder: TDecoder ) -> Result<TDecoder::TResult> {
 
@@ -124,38 +174,10 @@ pub fn decode<TDecoder: BMPDecoder>(
     let offset = input.read_u32::<LittleEndian>()?; // Offset to bitmap data
 
     // Read BMP Version 2 header
-    let header_size = input.read_u32::<LittleEndian>()?;
-    if header_size != 12 { // Header size
-        return Err( DecodingError::new_io(
-            "Invalid bitmap header. Only BMP V2 is supported at this time." ) );
-    }
-
-    let w = input.read_i16::<LittleEndian>()?;
-    let h = input.read_i16::<LittleEndian>()?;
-
-    let width = w.checked_abs().ok_or(
-        DecodingError::new_io( "Invalid bitmap width." ) )? as i32;
-
-    let height = h.checked_abs().ok_or(
-        DecodingError::new_io( "Invalid bitmap height." ) )? as i32;
-
-    let direction = h.signum() as i8;
-
-    if input.read_u16::<LittleEndian>()? != 1 { // Color planes
-        return Err( DecodingError::new_io( "Invalid bitmap color plane." ) );
-    }
-
-    let bpp = match input.read_u16::<LittleEndian>()? {
-        v @ 1
-        | v @ 4
-        | v @ 8
-        | v @ 24 => v as i32,
-        _ => return Err(
-            DecodingError::new_io( "Invalid bitmap bits per pixel." ) ),
-    };
+    let header = BMPHeader::from_reader( input )?;
 
     // Read palette
-    let palette_size = ( ( offset - 14 - header_size ) / 3 ) as usize;
+    let palette_size = ( ( offset - 14 - header.size ) / 3 ) as usize;
     let mut palette = Vec::with_capacity( palette_size );
     let mut palette_buffer : [u8; 3] = [0; 3];
 
@@ -169,19 +191,17 @@ pub fn decode<TDecoder: BMPDecoder>(
             a : 255 } );
     }
 
-    decoder.set_size( width as u32, height as u32 );
-    // let pixel_size = ( width * height ) as usize;
-    // let mut pixels = vec![ Color { r : 0, g : 0, b : 0, a : 255 }; pixel_size];
+    decoder.set_size( header.width, header.height );
 
-    let line_width = ( ( width * bpp + 31 ) / 32 ) * 4;
+    let line_width = ( ( header.width * header.bpp + 31 ) / 32 ) * 4;
     let mut line_buffer = vec![0 as u8; line_width as usize];
 
-    for y in 0..height {
+    for y in 0..header.height {
         input.read_exact( &mut line_buffer )?; // read whole line
 
-        let y = match direction {
+        let y = match header.direction {
             -1 => y,
-            1 => height - y - 1,
+            1 => header.height - y - 1,
             _ => return Err( DecodingError::new_io( "Invalid direction!" ) ),
         };
 
@@ -190,7 +210,7 @@ pub fn decode<TDecoder: BMPDecoder>(
         loop {
             match range.next() {
                 Some( mut x ) => {
-                    match bpp {
+                    match header.bpp {
                         1 => {
                             for i in (0..8).rev() {
                                 let c = palette[((line_buffer[ x as usize ] >> i ) & 0x01) as usize];
@@ -199,7 +219,7 @@ pub fn decode<TDecoder: BMPDecoder>(
                                 index += 1;
 
                                 if i < 7 {
-                                    if index >= width as usize {
+                                    if index >= header.width as usize {
                                         break;
                                     }
                                 }
@@ -211,7 +231,7 @@ pub fn decode<TDecoder: BMPDecoder>(
 
                             index += 1;
 
-                            if index >= width as usize {
+                            if index >= header.width as usize {
                                 break;
                             }
 
@@ -250,7 +270,7 @@ pub fn decode<TDecoder: BMPDecoder>(
                 None => break,
             }
 
-            if index >= width as usize {
+            if index >= header.width as usize {
                 break;
             }
         }
