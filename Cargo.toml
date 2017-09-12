@@ -1,6 +1,6 @@
 [package]
 name = "bmp_rs"
-version = "0.0.2"
+version = "0.0.3"
 authors = [ "Daniel Drywa <daniel@drywa.me>" ]
 description = "Bitmap decoder. (Still in the early stages)"
 #documentation = ""
