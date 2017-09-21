@@ -109,8 +109,10 @@ pub trait BMPDecoder {
     fn build( &mut self ) -> Result<Self::TResult>;
 }
 
-const MSVERSION2_SIZE : u32 = 12;
-const MSVERSION3_SIZE : u32 = 40;
+const MSVERSION2_SIZE: u32 = 12;
+const MSVERSION3_SIZE: u32 = 40;
+const MSVERSION4_SIZE: u32 = 108;
+const MSVERSION5_SIZE: u32 = 124;
 
 enum Compression {
     RLE8Bit,
@@ -136,9 +138,42 @@ struct BMPInfo {
     important_colors: u32,
 }
 
+struct BitfieldMask {
+    red: u32,
+    green: u32,
+    blue: u32,
+    alpha: u32,
+}
+
+struct BMPExtra {
+    color_space_type: u32,
+    red_x: i32,
+    red_y: i32,
+    red_z: i32,
+    green_x: i32,
+    green_y: i32,
+    green_z: i32,
+    blue_x: i32,
+    blue_y: i32,
+    blue_z: i32,
+    gamma_red: u32,
+    gamma_green: u32,
+    gamma_blue: u32,
+}
+
+struct BMPProfile {
+    intent: u32,
+    data: u32,
+    size: u32,
+    reserved: u32,
+}
+
 struct BMPHeader {
     core: BMPCore,
     info: Option<BMPInfo>,
+    mask: Option<BitfieldMask>,
+    extra: Option<BMPExtra>,
+    profile: Option<BMPProfile>,
 }
 
 impl BMPCore {
@@ -214,12 +249,18 @@ impl BMPHeader {
                 Ok( BMPHeader {
                     core: BMPCore::from_reader( input, size )?,
                     info: None,
+                    mask: None,
+                    extra: None,
+                    profile: None,
                 } )
             },
             MSVERSION3_SIZE => {
                 Ok( BMPHeader {
                     core: BMPCore::from_reader( input, size )?,
                     info: Some( BMPInfo::from_reader( input )? ),
+                    mask: None,
+                    extra: None,
+                    profile: None,
                 } )
             },
             _ => return Err( DecodingError::new_io(
