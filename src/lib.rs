@@ -50,13 +50,12 @@ use byteorder::{
     LittleEndian,
 };
 
-
 #[derive( Debug )]
 pub enum DecodingError {
-    IOError( std::io::Error ),
+    IOError( io::Error ),
 }
 
-pub type Result<T> = std::result::Result<T, DecodingError>;
+pub type Result<TResult> = std::result::Result<TResult, DecodingError>;
 
 impl DecodingError {
     fn new_io( message : &str ) -> DecodingError {
@@ -77,8 +76,7 @@ impl fmt::Display for DecodingError {
 impl error::Error for DecodingError {
     fn description( &self ) -> &str {
         match *self {
-            DecodingError::IOError( ref error )
-                => error.description(),
+            DecodingError::IOError( ref error ) => error.description(),
         }
     }
 
@@ -90,7 +88,7 @@ impl error::Error for DecodingError {
 }
 
 impl From<io::Error> for DecodingError {
-    fn from( error: std::io::Error ) -> Self {
+    fn from( error: io::Error ) -> Self {
         DecodingError::IOError( error )
     }
 }
@@ -110,6 +108,9 @@ pub trait BMPDecoder {
     fn set_pixel( &mut self, x: u32, y: u32, r: u8, g: u8, b: u8, a: u8 );
     fn build( &mut self ) -> Result<Self::TResult>;
 }
+
+const MSVERSION2_SIZE : u32 = 12;
+const MSVERSION3_SIZE : u32 = 40;
 
 struct BMPHeaderCore {
     size: u32,
@@ -139,80 +140,24 @@ enum BMPHeader {
     },
 }
 
-impl BMPHeader {
-    fn from_reader( input: &mut io::Read ) -> Result<BMPHeader> {
-        let size = input.read_u32::<LittleEndian>()?;
-        let core = BMPHeader::read_core( input, size )?;
+impl BMPHeaderCore {
+    fn from_reader( input: &mut io::Read, size: u32 ) -> Result<BMPHeaderCore> {
+        let width = if size == MSVERSION2_SIZE {
+            input.read_i16::<LittleEndian>()? as i32
+        } else {
+            input.read_i32::<LittleEndian>()?
+        }.checked_abs()
+            .ok_or( DecodingError::new_io( "Invalid width." ) )? as u32;
 
-        match size {
-            12 =>
-                Ok( BMPHeader::MSVersion2 { core } ),
-            40 => {
-                    let info = BMPHeaderInfo {
-                        compression: 0,
-                        size: 0,
-                        resolution_width: 0,
-                        resolution_height: 0,
-                        colors: 0,
-                        important_colors: 0,
-                    };
-                    Ok( BMPHeader::MSVersion3 { core, info } )
-                },
-            s @ _ => return Err( DecodingError::new_io(
-                &format!( "Invalid header size {}.", s ) ) ),
-        }
-    }
-
-    fn read_width( input: &mut io::Read, size: u32 ) -> Result<u32> {
-        Ok(
-            match size {
-                12 => input.read_i16::<LittleEndian>()? as i32,
-                40 => input.read_i32::<LittleEndian>()?,
-                s @ _ => return Err( DecodingError::new_io(
-                    &format!( "Invalid header size {}.", s ) ) ),
-
-            }.checked_abs().ok_or(
-                DecodingError::new_io( "Invalid width." ) )? as u32 )
-    }
-
-    fn read_height( input: &mut io::Read, size: u32 ) -> Result<(u32,bool)> {
-        let height = match size {
-            12 => input.read_i16::<LittleEndian>()? as i32,
-            40 => input.read_i32::<LittleEndian>()?,
-            s @ _ => return Err( DecodingError::new_io(
-                &format!( "Invalid header size {}.", s ) ) ),
+        let height = if size == MSVERSION2_SIZE {
+            input.read_i16::<LittleEndian>()? as i32
+        } else {
+            input.read_i32::<LittleEndian>()?
         };
 
         let correction = if height.signum() == 1 { true } else { false };
-        let height = height.checked_abs().ok_or(
-            DecodingError::new_io( "Invalid height." ) )? as u32;
-
-        Ok( ( height, correction ) )
-    }
-
-    fn read_bpp( input: &mut io::Read, size: u32 ) -> Result<u32> {
-        Ok(
-            match size {
-                12 => match input.read_u16::<LittleEndian>()? {
-                    v @ 1 | v @ 4 | v @ 8 | v @ 24 => v as u32,
-                    v @ _ => return Err(
-                        DecodingError::new_io(
-                            &format!( "Invalid bits per pixel {}.", v ) ) ),
-                },
-                40 => match input.read_u16::<LittleEndian>()? {
-                    v @ 1 | v @ 4 | v @ 8 | v @ 16 | v @ 24 | v @ 32 => v as u32,
-                    v @ _ => return Err(
-                        DecodingError::new_io(
-                            &format!( "Invalid bits per pixel {}.", v ) ) ),
-                },
-                s @ _ => return Err( DecodingError::new_io(
-                    &format!( "Invalid header size {}.", s ) ) ),
-            } )
-    }
-
-    fn read_core( input: &mut io::Read, size: u32 ) -> Result<BMPHeaderCore> {
-        let width = BMPHeader::read_width( input, size )?;
-        let ( height, correction ) = BMPHeader::read_height( input, size )?;
+        let height = height.checked_abs()
+            .ok_or( DecodingError::new_io( "Invalid height." ) )? as u32;
 
         let planes = input.read_u16::<LittleEndian>()?;
         if planes != 1 {
@@ -220,9 +165,49 @@ impl BMPHeader {
                 &format!( "Invalid number of color planes {}.", planes ) ) );
         }
 
-        let bpp = BMPHeader::read_bpp( input, size )?;
+        let bpp = input.read_u16::<LittleEndian>()? as u32;
+        match bpp {
+            1 | 4 | 8 | 16 | 24 | 32 => {
+                if size == MSVERSION2_SIZE
+                    && ( bpp == 16 || bpp == 32 ) {
+
+                    return Err( DecodingError::new_io(
+                        &format!( "Invalid bits per pixel {}.", bpp ) ) );
+                }
+            },
+            _ => return Err( DecodingError::new_io(
+                &format!( "Invalid bits per pixel {}.", bpp ) ) ),
+        }
 
         Ok( BMPHeaderCore { size, width, height, bpp, planes, correction } )
+    }
+}
+
+impl BMPHeader {
+    fn from_reader( input: &mut io::Read ) -> Result<BMPHeader> {
+        let size = input.read_u32::<LittleEndian>()?;
+        match size {
+            MSVERSION2_SIZE
+                => Ok( BMPHeader::MSVersion2 {
+                    core: BMPHeaderCore::from_reader( input, size )?
+                } ),
+            MSVERSION3_SIZE => {
+                let info = BMPHeaderInfo {
+                    compression: 0,
+                    size: 0,
+                    resolution_width: 0,
+                    resolution_height: 0,
+                    colors: 0,
+                    important_colors: 0,
+                };
+                Ok( BMPHeader::MSVersion3 {
+                    core: BMPHeaderCore::from_reader( input, size )?,
+                    info,
+                } )
+            },
+            _ => return Err( DecodingError::new_io(
+                &format!( "Invalid header size {}.", size ) ) ),
+        }
     }
 }
 
