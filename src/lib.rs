@@ -112,6 +112,12 @@ pub trait BMPDecoder {
 const MSVERSION2_SIZE : u32 = 12;
 const MSVERSION3_SIZE : u32 = 40;
 
+enum Compression {
+    RLE8Bit,
+    RLE4Bit,
+    Bitfield,
+}
+
 struct BMPCore {
     size: u32,
     width: u32,
@@ -122,7 +128,7 @@ struct BMPCore {
 }
 
 struct BMPInfo {
-    compression: u32,
+    compression: Option<Compression>,
     size: u32,
     resolution_width: i32,
     resolution_height: i32,
@@ -180,8 +186,17 @@ impl BMPCore {
 
 impl BMPInfo {
     fn from_reader( input: &mut io::Read ) -> Result<BMPInfo> {
+        let compression = match input.read_u32::<LittleEndian>()? {
+            0 => None,
+            1 => Some( Compression::RLE8Bit ),
+            2 => Some( Compression::RLE4Bit ),
+            3 => Some( Compression::Bitfield ),
+            v @ _ => return Err( DecodingError::new_io(
+                &format!( "Invalid compression {}", v ) ) ),
+        };
+
         Ok( BMPInfo {
-            compression: 0,
+            compression,
             size: 0,
             resolution_width: 0,
             resolution_height: 0,
