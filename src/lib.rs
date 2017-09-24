@@ -227,7 +227,8 @@ impl BMPHeader {
             input.read_u32::<LittleEndian>()? as isize )?;
 
         // Read core header
-        let mut buffer = Vec::with_capacity( ( version as usize ) - 4 );
+        let mut buffer = vec![0; ( version as usize ) - 4];
+
         input.read_exact( &mut buffer )?;
 
         let core = BMPCore::from_buffer( &buffer, version )?;
@@ -240,7 +241,7 @@ impl BMPHeader {
             match core.bpp {
                 1 | 4 | 8 => {
                     let palette_size = palette_size as usize;
-                    let mut buffer = Vec::with_capacity( palette_size * 3 );
+                    let mut buffer = vec![0; palette_size * 3];
                     input.read_exact( &mut buffer )?;
 
                     Some( BMPPalette::from_buffer( &buffer, palette_size )? )
@@ -357,7 +358,7 @@ pub fn decode<TDecoder: BMPDecoder>(
 
     // Read pixel data
     let size = ( ( header.core.width * header.core.bpp + 31 ) / 32 ) * 4;
-    let mut buffer = Vec::with_capacity( size as usize );
+    let mut buffer = vec![0; size as usize];
     let width = header.core.width;
     let height = header.core.height;
     let bpp = header.core.bpp;
