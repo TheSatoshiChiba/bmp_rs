@@ -115,20 +115,20 @@ const MSVERSION4_SIZE: isize = 108;
 const MSVERSION5_SIZE: isize = 124;
 
 #[derive( PartialEq, Eq, Clone, Copy )]
-enum BMPVersion {
+enum Version {
     Microsoft2 = MSVERSION2_SIZE,
     Microsoft3 = MSVERSION3_SIZE,
     Microsoft4 = MSVERSION4_SIZE,
     Microsoft5 = MSVERSION5_SIZE,
 }
 
-impl BMPVersion { // TODO: Replace with TryFrom when available.
-    fn from_isize( size: isize ) -> Result<BMPVersion> {
+impl Version { // TODO: Replace with TryFrom when available.
+    fn from_isize( size: isize ) -> Result<Version> {
         match size {
-            MSVERSION2_SIZE => Ok( BMPVersion::Microsoft2 ),
-            MSVERSION3_SIZE => Ok( BMPVersion::Microsoft3 ),
-            MSVERSION4_SIZE => Ok( BMPVersion::Microsoft4 ),
-            MSVERSION5_SIZE => Ok( BMPVersion::Microsoft5 ),
+            MSVERSION2_SIZE => Ok( Version::Microsoft2 ),
+            MSVERSION3_SIZE => Ok( Version::Microsoft3 ),
+            MSVERSION4_SIZE => Ok( Version::Microsoft4 ),
+            MSVERSION5_SIZE => Ok( Version::Microsoft5 ),
             _ => Err( DecodingError::new_io(
                     &format!( "Invalid bitmap header {},", size ) ) ),
         }
@@ -144,12 +144,12 @@ struct BMPCore {
 }
 
 impl BMPCore {
-    fn from_buffer( buf: &[u8], version: BMPVersion ) -> Result<BMPCore> {
+    fn from_buffer( buf: &[u8], version: Version ) -> Result<BMPCore> {
         let mut cursor = io::Cursor::new( buf );
 
         let ( width, height ) =
             match version {
-                BMPVersion::Microsoft2 => {
+                Version::Microsoft2 => {
                     let mut dimension: [i16; 2] = [0; 2];
                     cursor.read_i16_into::<LittleEndian>( &mut dimension )?;
 
@@ -178,7 +178,7 @@ impl BMPCore {
         let bpp = cursor.read_u16::<LittleEndian>()? as u32;
         match bpp {
             1 | 4 | 8 | 16 | 24 | 32 => {
-                if version == BMPVersion::Microsoft2
+                if version == Version::Microsoft2
                     && ( bpp == 16 || bpp == 32 ) {
 
                     return Err( DecodingError::new_io(
@@ -216,14 +216,14 @@ impl BMPPalette {
 }
 
 struct BMPHeader {
-    version: BMPVersion,
+    version: Version,
     core: BMPCore,
     palette: Option<BMPPalette>,
 }
 
 impl BMPHeader {
     fn from_reader( input: &mut io::Read ) -> Result<BMPHeader> {
-        let version = BMPVersion::from_isize(
+        let version = Version::from_isize(
             input.read_u32::<LittleEndian>()? as isize )?;
 
         // Read core header
