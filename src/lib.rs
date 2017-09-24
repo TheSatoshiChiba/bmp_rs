@@ -259,16 +259,16 @@ impl BMPHeader {
 fn decode_1bpp<TDecoder: BMPDecoder>(
     y: u32, width: u32, buf: &[u8], palette: &[Color], decoder: &mut TDecoder ) {
 
-    let mut length: u32 = 0;
+    let mut x: u32 = 0;
 
     for byte in buf.iter() {
         for bit in (0..8).rev() {
 
             let color: Color = palette[ ( ( byte >> bit as u8 ) & 0x01 ) as usize ];
-            decoder.set_pixel( length, y, color.r, color.g, color.b, color.a );
+            decoder.set_pixel( x, y, color.r, color.g, color.b, color.a );
 
-            length += 1;
-            if length >= width {
+            x += 1;
+            if x >= width {
                 return;
             }
         }
@@ -277,6 +277,26 @@ fn decode_1bpp<TDecoder: BMPDecoder>(
 
 fn decode_4bpp<TDecoder: BMPDecoder>(
     y: u32, width: u32, buf: &[u8], palette: &[Color], decoder: &mut TDecoder ) {
+
+    let mut x: u32 = 0;
+
+    for byte in buf.iter() {
+        let color = palette[ ( ( byte >> 4 as u8 ) & 0x0F ) as usize ];
+        decoder.set_pixel( x, y, color.r, color.g, color.b, color.a );
+
+        x += 1;
+        if x >= width {
+            break;
+        }
+
+        let color = palette[ ( byte & 0x0F ) as usize ];
+        decoder.set_pixel( x, y, color.r, color.g, color.b, color.a );
+
+        x += 1;
+        if x >= width {
+            break;
+        }
+    }
 }
 
 fn decode_8bpp<TDecoder: BMPDecoder>(
@@ -352,36 +372,9 @@ pub fn decode<TDecoder: BMPDecoder>(
                 Some( mut x ) => {
                     match core.bpp {
                         1 => {
-                            for i in (0..8).rev() {
-                                if let Some( ref palette ) = header.palette {
-                                    let c = palette.colors[((line_buffer[ x as usize ] >> i ) & 0x01) as usize];
-                                    decoder.set_pixel( index as u32, y as u32, c.r, c.g, c.b, c.a);
-
-                                    index += 1;
-
-                                    if i < 7 {
-                                        if index >= core.width as usize {
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                        },
                         4 => {
                             if let Some( ref palette ) = header.palette {
-                                let c1 = palette.colors[((line_buffer[ x as usize ] >> 4 ) & 0x0F) as usize];
-                                decoder.set_pixel( index as u32, y as u32, c1.r, c1.g, c1.b, c1.a);
 
-                                index += 1;
-
-                                if index >= core.width as usize {
-                                    break;
-                                }
-
-                                let c2 = palette.colors[(line_buffer[ x as usize ] & 0x0F) as usize];
-                                decoder.set_pixel( index as u32, y as u32, c2.r, c2.g, c2.b, c2.a);
-
-                                index += 1;
                             }
                         },
                         8 => {
