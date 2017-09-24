@@ -261,10 +261,10 @@ fn decode_1bpp<TDecoder: BMPDecoder>(
 
     let mut x: u32 = 0;
 
-    for byte in buf.iter() {
+    for byte in buf {
         for bit in (0..8).rev() {
 
-            let color: Color = palette[ ( ( byte >> bit as u8 ) & 0x01 ) as usize ];
+            let color: Color = palette[ ( ( *byte >> bit ) & 0x01 ) as usize ];
             decoder.set_pixel( x, y, color.r, color.g, color.b, color.a );
 
             x += 1;
@@ -280,8 +280,8 @@ fn decode_4bpp<TDecoder: BMPDecoder>(
 
     let mut x: u32 = 0;
 
-    for byte in buf.iter() {
-        let color = palette[ ( ( byte >> 4 as u8 ) & 0x0F ) as usize ];
+    for byte in buf {
+        let color = palette[ ( ( *byte >> 4 ) & 0x0F ) as usize ];
         decoder.set_pixel( x, y, color.r, color.g, color.b, color.a );
 
         x += 1;
@@ -289,7 +289,7 @@ fn decode_4bpp<TDecoder: BMPDecoder>(
             break;
         }
 
-        let color = palette[ ( byte & 0x0F ) as usize ];
+        let color = palette[ ( *byte & 0x0F ) as usize ];
         decoder.set_pixel( x, y, color.r, color.g, color.b, color.a );
 
         x += 1;
@@ -301,6 +301,18 @@ fn decode_4bpp<TDecoder: BMPDecoder>(
 
 fn decode_8bpp<TDecoder: BMPDecoder>(
     y: u32, width: u32, buf: &[u8], palette: &[Color], decoder: &mut TDecoder ) {
+
+    let mut x: u32 = 0;
+
+    for byte in buf {
+        let color = palette[ *byte as usize ];
+        decoder.set_pixel( x, y, color.r, color.g, color.b, color.a );
+
+        x += 1;
+        if x >= width {
+            break;
+        }
+    }
 }
 
 fn decode_24bpp<TDecoder: BMPDecoder>(
@@ -371,20 +383,6 @@ pub fn decode<TDecoder: BMPDecoder>(
             match range.next() {
                 Some( mut x ) => {
                     match core.bpp {
-                        1 => {
-                        4 => {
-                            if let Some( ref palette ) = header.palette {
-
-                            }
-                        },
-                        8 => {
-                            if let Some( ref palette ) = header.palette {
-                                let c = palette.colors[line_buffer[ x as usize ] as usize];
-                                decoder.set_pixel( index as u32, y as u32, c.r, c.g, c.b, c.a);
-
-                                index += 1;
-                            }
-                        },
                         24 => {
                             let b = line_buffer[ x as usize ];
                             if let Some( z ) = range.next() {
