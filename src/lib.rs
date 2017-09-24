@@ -215,14 +215,14 @@ impl Palette {
     }
 }
 
-struct BMPHeader {
+struct Header {
     version: Version,
     core: Core,
     palette: Option<Palette>,
 }
 
-impl BMPHeader {
-    fn from_reader( input: &mut io::Read ) -> Result<BMPHeader> {
+impl Header {
+    fn from_reader( input: &mut io::Read ) -> Result<Header> {
         let version = Version::from_isize(
             input.read_u32::<LittleEndian>()? as isize )?;
 
@@ -253,7 +253,7 @@ impl BMPHeader {
             None
         };
 
-        Ok ( BMPHeader { version, core, palette } )
+        Ok ( Header { version, core, palette } )
     }
 }
 
@@ -351,7 +351,7 @@ pub fn decode<TDecoder: Decoder>(
     // TODO: Make sensible decisions about the offset to the pixel data
 
     // Read bitmap header
-    let header = BMPHeader::from_reader( input )?;
+    let header = Header::from_reader( input )?;
 
     // Set output size
     decoder.set_size( header.core.width, header.core.height );
