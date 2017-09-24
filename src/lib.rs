@@ -272,14 +272,22 @@ impl BMPHeader {
 pub fn decode<TDecoder: BMPDecoder>(
     input: &mut io::Read, mut decoder: TDecoder ) -> Result<TDecoder::TResult> {
 
-    // Read file header
-    if input.read_u8()? != 0x42 || input.read_u8()? != 0x4D {
-        return Err( DecodingError::new_io( "Invalid bitmap header." ) );
+    // read file header
+    let mut header: [u8; 14] = [0; 14];
+    input.read_exact( &mut header )?;
+
+    let mut cursor = io::Cursor::new( header );
+    if header[0] != 0x42 && header[1] != 0x4D {
+        return Err( DecodingError::new_io( "Not a bitmap." ) );
     }
 
-    let _ = input.read_u32::<LittleEndian>()?; // File size
-    let _ = input.read_u32::<LittleEndian>()?; // Reserved fields
-    let offset = input.read_u32::<LittleEndian>()?; // Offset to bitmap data
+    // TODO: Make sensible decisions about ridiculous big files
+
+    cursor.set_position( 10 );
+    let offset = cursor.read_u32::<LittleEndian>()?;
+
+    // TODO: Make sensible decisions about the offset to the pixel data
+
     let header = BMPHeader::from_reader( input )?;
     let core = header.core;
 
