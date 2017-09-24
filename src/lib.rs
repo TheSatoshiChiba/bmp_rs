@@ -16,7 +16,7 @@
 //! }
 //!
 //!
-//! impl BMPDecoder for ImageDecoder {
+//! impl Decoder for ImageDecoder {
 //!     type TResult = MyImageType; // Your image type
 //!
 //!     fn set_size( &mut self, width: u32, height: u32 ) {
@@ -101,7 +101,7 @@ struct Color {
     a: u8,
 }
 
-pub trait BMPDecoder {
+pub trait Decoder {
     type TResult;
 
     fn set_size( &mut self, width: u32, height: u32 );
@@ -257,7 +257,7 @@ impl BMPHeader {
     }
 }
 
-fn decode_1bpp<TDecoder: BMPDecoder>(
+fn decode_1bpp<TDecoder: Decoder>(
     y: u32, width: u32, buf: &[u8], palette: &[Color], decoder: &mut TDecoder ) {
 
     let mut x: u32 = 0;
@@ -276,7 +276,7 @@ fn decode_1bpp<TDecoder: BMPDecoder>(
     }
 }
 
-fn decode_4bpp<TDecoder: BMPDecoder>(
+fn decode_4bpp<TDecoder: Decoder>(
     y: u32, width: u32, buf: &[u8], palette: &[Color], decoder: &mut TDecoder ) {
 
     let mut x: u32 = 0;
@@ -300,7 +300,7 @@ fn decode_4bpp<TDecoder: BMPDecoder>(
     }
 }
 
-fn decode_8bpp<TDecoder: BMPDecoder>(
+fn decode_8bpp<TDecoder: Decoder>(
     y: u32, width: u32, buf: &[u8], palette: &[Color], decoder: &mut TDecoder ) {
 
     let mut x: u32 = 0;
@@ -316,7 +316,7 @@ fn decode_8bpp<TDecoder: BMPDecoder>(
     }
 }
 
-fn decode_24bpp<TDecoder: BMPDecoder>(
+fn decode_24bpp<TDecoder: Decoder>(
     y: u32, width: u32, buf: &[u8], decoder: &mut TDecoder ) {
 
     let mut x: u32 = 0;
@@ -331,7 +331,7 @@ fn decode_24bpp<TDecoder: BMPDecoder>(
     }
 }
 
-pub fn decode<TDecoder: BMPDecoder>(
+pub fn decode<TDecoder: Decoder>(
     input: &mut io::Read, mut decoder: TDecoder ) -> Result<TDecoder::TResult> {
 
     // Read file header
