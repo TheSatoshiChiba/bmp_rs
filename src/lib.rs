@@ -144,7 +144,7 @@ struct BMPCore {
 }
 
 impl BMPCore {
-    fn from_buffer( buf: &mut [u8], version: BMPVersion ) -> Result<BMPCore> {
+    fn from_buffer( buf: &[u8], version: BMPVersion ) -> Result<BMPCore> {
         let mut cursor = io::Cursor::new( buf );
 
         let ( width, height ) =
@@ -193,9 +193,32 @@ impl BMPCore {
     }
 }
 
+struct BMPPalette {
+    colors: Vec<Color>,
+}
+
+impl BMPPalette {
+    fn from_buffer( buf: &[u8], size: usize ) -> Result<BMPPalette> {
+        let iter = buf.chunks( 3 );
+        let mut colors = Vec::with_capacity( size );
+
+        for x in iter {
+            colors.push(
+                Color {
+                    b: x[0],
+                    g: x[1],
+                    r: x[2],
+                    a: 255,
+                } );
+        }
+        Ok( BMPPalette { colors } )
+    }
+}
+
 struct BMPHeader {
     version: BMPVersion,
     core: BMPCore,
+    palette: Option<BMPPalette>,
 }
 
 impl BMPHeader {
@@ -203,12 +226,33 @@ impl BMPHeader {
         let version = BMPVersion::from_isize(
             input.read_u32::<LittleEndian>()? as isize )?;
 
-        let mut header = Vec::with_capacity( ( version as usize ) - 4 );
-        input.read_exact( &mut header )?;
+        // Read core header
+        let mut buffer = Vec::with_capacity( ( version as usize ) - 4 );
+        input.read_exact( &mut buffer )?;
 
-        let core = BMPCore::from_buffer( &mut header, version )?;
+        let core = BMPCore::from_buffer( &buffer, version )?;
 
-        Ok ( BMPHeader { version, core } )
+        // Read palette
+        let palette_size = 1 << core.bpp;
+        // TODO: Check if the size is sensible with the bitmap offset
+
+        let palette = if palette_size > 0 {
+            match core.bpp {
+                1 | 4 | 8 => {
+                    let palette_size = palette_size as usize;
+                    let mut buffer = Vec::with_capacity( palette_size * 3 );
+                    input.read_exact( &mut buffer )?;
+
+                    Some( BMPPalette::from_buffer( &buffer, palette_size )? )
+                },
+                _ => return Err( DecodingError::new_io(
+                    &format!( "Unexpected color palette of size {}.", palette_size ) ) ),
+            }
+        } else {
+            None
+        };
+
+        Ok ( BMPHeader { version, core, palette } )
     }
 }
 
@@ -235,21 +279,6 @@ pub fn decode<TDecoder: BMPDecoder>(
     let header = BMPHeader::from_reader( input )?;
     let core = header.core;
 
-    // Read palette
-    let palette_size = ( ( offset - 14 - ( header.version as u32 ) ) / 3 ) as usize;
-    let mut palette = Vec::with_capacity( palette_size );
-    let mut palette_buffer : [u8; 3] = [0; 3];
-
-    for _ in 0..palette_size {
-        input.read_exact( &mut palette_buffer )?;
-
-        palette.push( Color {
-            r : palette_buffer[2],
-            g : palette_buffer[1],
-            b : palette_buffer[0],
-            a : 255 } );
-    }
-
     decoder.set_size( core.width, core.height );
 
     let line_width = ( ( core.width * core.bpp + 31 ) / 32 ) * 4;
@@ -272,38 +301,44 @@ pub fn decode<TDecoder: BMPDecoder>(
                     match core.bpp {
                         1 => {
                             for i in (0..8).rev() {
-                                let c = palette[((line_buffer[ x as usize ] >> i ) & 0x01) as usize];
-                                decoder.set_pixel( index as u32, y as u32, c.r, c.g, c.b, c.a);
+                                if let Some( ref palette ) = header.palette {
+                                    let c = palette.colors[((line_buffer[ x as usize ] >> i ) & 0x01) as usize];
+                                    decoder.set_pixel( index as u32, y as u32, c.r, c.g, c.b, c.a);
 
-                                index += 1;
+                                    index += 1;
 
-                                if i < 7 {
-                                    if index >= core.width as usize {
-                                        break;
+                                    if i < 7 {
+                                        if index >= core.width as usize {
+                                            break;
+                                        }
                                     }
                                 }
                             }
                         },
                         4 => {
-                            let c1 = palette[((line_buffer[ x as usize ] >> 4 ) & 0x0F) as usize];
-                            decoder.set_pixel( index as u32, y as u32, c1.r, c1.g, c1.b, c1.a);
+                            if let Some( ref palette ) = header.palette {
+                                let c1 = palette.colors[((line_buffer[ x as usize ] >> 4 ) & 0x0F) as usize];
+                                decoder.set_pixel( index as u32, y as u32, c1.r, c1.g, c1.b, c1.a);
 
-                            index += 1;
+                                index += 1;
 
-                            if index >= core.width as usize {
-                                break;
+                                if index >= core.width as usize {
+                                    break;
+                                }
+
+                                let c2 = palette.colors[(line_buffer[ x as usize ] & 0x0F) as usize];
+                                decoder.set_pixel( index as u32, y as u32, c2.r, c2.g, c2.b, c2.a);
+
+                                index += 1;
                             }
-
-                            let c2 = palette[(line_buffer[ x as usize ] & 0x0F) as usize];
-                            decoder.set_pixel( index as u32, y as u32, c2.r, c2.g, c2.b, c2.a);
-
-                            index += 1;
                         },
                         8 => {
-                            let c = palette[line_buffer[ x as usize ] as usize];
-                            decoder.set_pixel( index as u32, y as u32, c.r, c.g, c.b, c.a);
+                            if let Some( ref palette ) = header.palette {
+                                let c = palette.colors[line_buffer[ x as usize ] as usize];
+                                decoder.set_pixel( index as u32, y as u32, c.r, c.g, c.b, c.a);
 
-                            index += 1;
+                                index += 1;
+                            }
                         },
                         24 => {
                             let b = line_buffer[ x as usize ];
