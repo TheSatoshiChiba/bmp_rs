@@ -193,12 +193,12 @@ impl Core {
     }
 }
 
-struct BMPPalette {
+struct Palette {
     colors: Vec<Color>,
 }
 
-impl BMPPalette {
-    fn from_buffer( buf: &[u8], size: usize ) -> Result<BMPPalette> {
+impl Palette {
+    fn from_buffer( buf: &[u8], size: usize ) -> Result<Palette> {
         let iter = buf.chunks( 3 );
         let mut colors = Vec::with_capacity( size );
 
@@ -211,14 +211,14 @@ impl BMPPalette {
                     a: 255,
                 } );
         }
-        Ok( BMPPalette { colors } )
+        Ok( Palette { colors } )
     }
 }
 
 struct BMPHeader {
     version: Version,
     core: Core,
-    palette: Option<BMPPalette>,
+    palette: Option<Palette>,
 }
 
 impl BMPHeader {
@@ -244,7 +244,7 @@ impl BMPHeader {
                     let mut buffer = vec![0; palette_size * 3];
                     input.read_exact( &mut buffer )?;
 
-                    Some( BMPPalette::from_buffer( &buffer, palette_size )? )
+                    Some( Palette::from_buffer( &buffer, palette_size )? )
                 },
                 _ => return Err( DecodingError::new_io(
                     &format!( "Unexpected color palette of size {}.", palette_size ) ) ),
