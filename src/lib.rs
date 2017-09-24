@@ -317,8 +317,18 @@ fn decode_8bpp<TDecoder: BMPDecoder>(
 
 fn decode_24bpp<TDecoder: BMPDecoder>(
     y: u32, width: u32, buf: &[u8], decoder: &mut TDecoder ) {
-}
 
+    let mut x: u32 = 0;
+
+    for bytes in buf.chunks( 3 ) {
+        decoder.set_pixel( x, y, bytes[2], bytes[1], bytes[0], 255 );
+
+        x += 1;
+        if x >= width {
+            break;
+        }
+    }
+}
 
 pub fn decode<TDecoder: BMPDecoder>(
     input: &mut io::Read, mut decoder: TDecoder ) -> Result<TDecoder::TResult> {
@@ -367,6 +377,7 @@ pub fn decode<TDecoder: BMPDecoder>(
             y
         };
 
+        // Decode pixels
         match bpp {
             1 => decode_1bpp( y, width, &buffer, &palette, &mut decoder ),
             4 => decode_4bpp( y, width, &buffer, &palette, &mut decoder ),
@@ -374,44 +385,6 @@ pub fn decode<TDecoder: BMPDecoder>(
             24 => decode_24bpp( y, width, &buffer, &mut decoder ),
             v => panic!( "Unexpected bits per pixel {}", v ),
         }
-
-
-        /*
-        let mut index = 0;
-        let mut range = 0..line_width;
-        loop {
-            match range.next() {
-                Some( mut x ) => {
-                    match core.bpp {
-                        24 => {
-                            let b = line_buffer[ x as usize ];
-                            if let Some( z ) = range.next() {
-                                x = z;
-                            } else { break }
-
-                            let g = line_buffer[ x as usize ];
-                            if let Some( z ) = range.next() {
-                                x = z;
-                            } else { break }
-
-                            let r = line_buffer[ x as usize ];
-
-                            decoder.set_pixel( index as u32, y as u32, r, g, b, 255);
-
-                            index += 1;
-                        },
-                        _=> return Err(
-                            DecodingError::new_io( "Invalid bitmap bits per pixel." ) ),
-                    }
-                },
-                None => break,
-            }
-
-            if index >= core.width as usize {
-                break;
-            }
-        }
-        */
     }
 
     decoder.build()
