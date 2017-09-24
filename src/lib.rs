@@ -109,102 +109,76 @@ pub trait BMPDecoder {
     fn build( &mut self ) -> Result<Self::TResult>;
 }
 
-const MSVERSION2_SIZE: u32 = 12;
-const MSVERSION3_SIZE: u32 = 40;
-const MSVERSION4_SIZE: u32 = 108;
-const MSVERSION5_SIZE: u32 = 124;
+const MSVERSION2_SIZE: isize = 12;
+const MSVERSION3_SIZE: isize = 40;
+const MSVERSION4_SIZE: isize = 108;
+const MSVERSION5_SIZE: isize = 124;
 
-enum Compression {
-    RLE8Bit,
-    RLE4Bit,
-    Bitfield,
+#[derive( PartialEq, Eq, Clone, Copy )]
+enum BMPVersion {
+    Microsoft2 = MSVERSION2_SIZE,
+    Microsoft3 = MSVERSION3_SIZE,
+    Microsoft4 = MSVERSION4_SIZE,
+    Microsoft5 = MSVERSION5_SIZE,
+}
+
+impl BMPVersion { // TODO: Replace with TryFrom when available.
+    fn from_isize( size: isize ) -> Result<BMPVersion> {
+        match size {
+            MSVERSION2_SIZE => Ok( BMPVersion::Microsoft2 ),
+            MSVERSION3_SIZE => Ok( BMPVersion::Microsoft3 ),
+            MSVERSION4_SIZE => Ok( BMPVersion::Microsoft4 ),
+            MSVERSION5_SIZE => Ok( BMPVersion::Microsoft5 ),
+            _ => Err( DecodingError::new_io(
+                    &format!( "Invalid bitmap header {},", size ) ) ),
+        }
+    }
 }
 
 struct BMPCore {
-    size: u32,
     width: u32,
     height: u32,
     bpp: u32,
     planes: u16,
-    correction: bool,
-}
-
-struct BMPInfo {
-    compression: Option<Compression>,
-    size: u32,
-    resolution_width: i32,
-    resolution_height: i32,
-    colors: u32,
-    important_colors: u32,
-}
-
-struct BitfieldMask {
-    red: u32,
-    green: u32,
-    blue: u32,
-    alpha: u32,
-}
-
-struct BMPExtra {
-    color_space_type: u32,
-    red_x: i32,
-    red_y: i32,
-    red_z: i32,
-    green_x: i32,
-    green_y: i32,
-    green_z: i32,
-    blue_x: i32,
-    blue_y: i32,
-    blue_z: i32,
-    gamma_red: u32,
-    gamma_green: u32,
-    gamma_blue: u32,
-}
-
-struct BMPProfile {
-    intent: u32,
-    data: u32,
-    size: u32,
-    reserved: u32,
-}
-
-struct BMPHeader {
-    core: BMPCore,
-    info: Option<BMPInfo>,
-    mask: Option<BitfieldMask>,
-    extra: Option<BMPExtra>,
-    profile: Option<BMPProfile>,
+    bottom_up: bool,
 }
 
 impl BMPCore {
-    fn from_reader( input: &mut io::Read, size: u32 ) -> Result<BMPCore> {
-        let width = if size == MSVERSION2_SIZE {
-            input.read_i16::<LittleEndian>()? as i32
-        } else {
-            input.read_i32::<LittleEndian>()?
-        }.checked_abs()
+    fn from_buffer( buf: &mut [u8], version: BMPVersion ) -> Result<BMPCore> {
+        let mut cursor = io::Cursor::new( buf );
+
+        let ( width, height ) =
+            match version {
+                BMPVersion::Microsoft2 => {
+                    let mut dimension: [i16; 2] = [0; 2];
+                    cursor.read_i16_into::<LittleEndian>( &mut dimension )?;
+
+                    ( dimension[0] as i32, dimension[1] as i32 )
+                },
+                _ => {
+                    let mut dimension: [i32; 2] = [0; 2];
+                    cursor.read_i32_into::<LittleEndian>( &mut dimension )?;
+
+                    ( dimension[0], dimension[1] )
+                },
+            };
+
+        let bottom_up = if height.signum() == 1 { true } else { false };
+        let width = width.checked_abs()
             .ok_or( DecodingError::new_io( "Invalid width." ) )? as u32;
-
-        let height = if size == MSVERSION2_SIZE {
-            input.read_i16::<LittleEndian>()? as i32
-        } else {
-            input.read_i32::<LittleEndian>()?
-        };
-
-        let correction = if height.signum() == 1 { true } else { false };
         let height = height.checked_abs()
             .ok_or( DecodingError::new_io( "Invalid height." ) )? as u32;
 
-        let planes = input.read_u16::<LittleEndian>()?;
+        let planes = cursor.read_u16::<LittleEndian>()?;
         if planes != 1 {
             return Err( DecodingError::new_io(
                 &format!( "Invalid number of color planes {}.", planes ) ) );
         }
 
-        let bpp = input.read_u16::<LittleEndian>()? as u32;
+        let bpp = cursor.read_u16::<LittleEndian>()? as u32;
         match bpp {
             1 | 4 | 8 | 16 | 24 | 32 => {
-                if size == MSVERSION2_SIZE
+                if version == BMPVersion::Microsoft2
                     && ( bpp == 16 || bpp == 32 ) {
 
                     return Err( DecodingError::new_io(
@@ -215,70 +189,39 @@ impl BMPCore {
                 &format!( "Invalid bits per pixel {}.", bpp ) ) ),
         }
 
-        Ok( BMPCore { size, width, height, bpp, planes, correction } )
+        Ok( BMPCore { width, height, bpp, planes, bottom_up } )
     }
 }
 
-impl BMPInfo {
-    fn from_reader( input: &mut io::Read ) -> Result<BMPInfo> {
-        let compression = match input.read_u32::<LittleEndian>()? {
-            0 => None,
-            1 => Some( Compression::RLE8Bit ),
-            2 => Some( Compression::RLE4Bit ),
-            3 => Some( Compression::Bitfield ),
-            v @ _ => return Err( DecodingError::new_io(
-                &format!( "Invalid compression {}", v ) ) ),
-        };
-
-        Ok( BMPInfo {
-            compression,
-            size: 0,
-            resolution_width: 0,
-            resolution_height: 0,
-            colors: 0,
-            important_colors: 0,
-        } )
-    }
+struct BMPHeader {
+    version: BMPVersion,
+    core: BMPCore,
 }
 
 impl BMPHeader {
     fn from_reader( input: &mut io::Read ) -> Result<BMPHeader> {
-        let size = input.read_u32::<LittleEndian>()?;
-        match size {
-            MSVERSION2_SIZE => {
-                Ok( BMPHeader {
-                    core: BMPCore::from_reader( input, size )?,
-                    info: None,
-                    mask: None,
-                    extra: None,
-                    profile: None,
-                } )
-            },
-            MSVERSION3_SIZE => {
-                Ok( BMPHeader {
-                    core: BMPCore::from_reader( input, size )?,
-                    info: Some( BMPInfo::from_reader( input )? ),
-                    mask: None,
-                    extra: None,
-                    profile: None,
-                } )
-            },
-            _ => return Err( DecodingError::new_io(
-                &format!( "Invalid header size {}.", size ) ) ),
-        }
+        let version = BMPVersion::from_isize(
+            input.read_u32::<LittleEndian>()? as isize )?;
+
+        let mut header = Vec::with_capacity( ( version as usize ) - 4 );
+        input.read_exact( &mut header )?;
+
+        let core = BMPCore::from_buffer( &mut header, version )?;
+
+        Ok ( BMPHeader { version, core } )
     }
 }
 
 pub fn decode<TDecoder: BMPDecoder>(
     input: &mut io::Read, mut decoder: TDecoder ) -> Result<TDecoder::TResult> {
 
-    // read file header
+    // Read file header
     let mut header: [u8; 14] = [0; 14];
     input.read_exact( &mut header )?;
 
     let mut cursor = io::Cursor::new( header );
     if header[0] != 0x42 && header[1] != 0x4D {
-        return Err( DecodingError::new_io( "Not a bitmap." ) );
+        return Err( DecodingError::new_io( "Invalid bitmap file." ) );
     }
 
     // TODO: Make sensible decisions about ridiculous big files
@@ -288,11 +231,12 @@ pub fn decode<TDecoder: BMPDecoder>(
 
     // TODO: Make sensible decisions about the offset to the pixel data
 
+    // Read bitmap header
     let header = BMPHeader::from_reader( input )?;
     let core = header.core;
 
     // Read palette
-    let palette_size = ( ( offset - 14 - core.size ) / 3 ) as usize;
+    let palette_size = ( ( offset - 14 - ( header.version as u32 ) ) / 3 ) as usize;
     let mut palette = Vec::with_capacity( palette_size );
     let mut palette_buffer : [u8; 3] = [0; 3];
 
@@ -314,7 +258,7 @@ pub fn decode<TDecoder: BMPDecoder>(
     for y in 0..core.height {
         input.read_exact( &mut line_buffer )?; // read whole line
 
-        let y = if core.correction {
+        let y = if core.bottom_up {
             core.height - y - 1
         } else {
             y
@@ -392,6 +336,85 @@ pub fn decode<TDecoder: BMPDecoder>(
     }
 
     decoder.build()
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+enum Compression {
+    RLE8Bit,
+    RLE4Bit,
+    Bitfield,
+}
+
+struct BMPInfo {
+    compression: Option<Compression>,
+    size: u32,
+    resolution_width: i32,
+    resolution_height: i32,
+    colors: u32,
+    important_colors: u32,
+}
+
+struct BitfieldMask {
+    red: u32,
+    green: u32,
+    blue: u32,
+    alpha: u32,
+}
+
+struct BMPExtra {
+    color_space_type: u32,
+    red_x: i32,
+    red_y: i32,
+    red_z: i32,
+    green_x: i32,
+    green_y: i32,
+    green_z: i32,
+    blue_x: i32,
+    blue_y: i32,
+    blue_z: i32,
+    gamma_red: u32,
+    gamma_green: u32,
+    gamma_blue: u32,
+}
+
+struct BMPProfile {
+    intent: u32,
+    data: u32,
+    size: u32,
+    reserved: u32,
+}
+
+impl BMPInfo {
+    fn from_reader( input: &mut io::Read ) -> Result<BMPInfo> {
+        let compression = match input.read_u32::<LittleEndian>()? {
+            0 => None,
+            1 => Some( Compression::RLE8Bit ),
+            2 => Some( Compression::RLE4Bit ),
+            3 => Some( Compression::Bitfield ),
+            v @ _ => return Err( DecodingError::new_io(
+                &format!( "Invalid compression {}", v ) ) ),
+        };
+
+        Ok( BMPInfo {
+            compression,
+            size: 0,
+            resolution_width: 0,
+            resolution_height: 0,
+            colors: 0,
+            important_colors: 0,
+        } )
+    }
 }
 
 #[cfg( test )]
