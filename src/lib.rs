@@ -135,7 +135,7 @@ impl Version { // TODO: Replace with TryFrom when available.
     }
 }
 
-struct BMPCore {
+struct Core {
     width: u32,
     height: u32,
     bpp: u32,
@@ -143,8 +143,8 @@ struct BMPCore {
     bottom_up: bool,
 }
 
-impl BMPCore {
-    fn from_buffer( buf: &[u8], version: Version ) -> Result<BMPCore> {
+impl Core {
+    fn from_buffer( buf: &[u8], version: Version ) -> Result<Core> {
         let mut cursor = io::Cursor::new( buf );
 
         let ( width, height ) =
@@ -189,7 +189,7 @@ impl BMPCore {
                 &format!( "Invalid bits per pixel {}.", bpp ) ) ),
         }
 
-        Ok( BMPCore { width, height, bpp, planes, bottom_up } )
+        Ok( Core { width, height, bpp, planes, bottom_up } )
     }
 }
 
@@ -217,7 +217,7 @@ impl BMPPalette {
 
 struct BMPHeader {
     version: Version,
-    core: BMPCore,
+    core: Core,
     palette: Option<BMPPalette>,
 }
 
@@ -231,7 +231,7 @@ impl BMPHeader {
 
         input.read_exact( &mut buffer )?;
 
-        let core = BMPCore::from_buffer( &buffer, version )?;
+        let core = Core::from_buffer( &buffer, version )?;
 
         // Read palette
         let palette_size = 1 << core.bpp;
