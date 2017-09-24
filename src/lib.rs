@@ -256,6 +256,38 @@ impl BMPHeader {
     }
 }
 
+fn decode_1bpp<TDecoder: BMPDecoder>(
+    y: u32, width: u32, buf: &[u8], palette: &[Color], decoder: &mut TDecoder ) {
+
+    let mut length: u32 = 0;
+
+    for byte in buf.iter() {
+        for bit in (0..8).rev() {
+
+            let color: Color = palette[ ( ( byte >> bit as u8 ) & 0x01 ) as usize ];
+            decoder.set_pixel( length, y, color.r, color.g, color.b, color.a );
+
+            length += 1;
+            if length >= width {
+                return;
+            }
+        }
+    }
+}
+
+fn decode_4bpp<TDecoder: BMPDecoder>(
+    y: u32, width: u32, buf: &[u8], palette: &[Color], decoder: &mut TDecoder ) {
+}
+
+fn decode_8bpp<TDecoder: BMPDecoder>(
+    y: u32, width: u32, buf: &[u8], palette: &[Color], decoder: &mut TDecoder ) {
+}
+
+fn decode_24bpp<TDecoder: BMPDecoder>(
+    y: u32, width: u32, buf: &[u8], decoder: &mut TDecoder ) {
+}
+
+
 pub fn decode<TDecoder: BMPDecoder>(
     input: &mut io::Read, mut decoder: TDecoder ) -> Result<TDecoder::TResult> {
 
@@ -271,28 +303,48 @@ pub fn decode<TDecoder: BMPDecoder>(
     // TODO: Make sensible decisions about ridiculous big files
 
     cursor.set_position( 10 );
-    let offset = cursor.read_u32::<LittleEndian>()?;
+    let _ = cursor.read_u32::<LittleEndian>()?; // Offset
 
     // TODO: Make sensible decisions about the offset to the pixel data
 
     // Read bitmap header
     let header = BMPHeader::from_reader( input )?;
-    let core = header.core;
 
-    decoder.set_size( core.width, core.height );
+    // Set output size
+    decoder.set_size( header.core.width, header.core.height );
 
-    let line_width = ( ( core.width * core.bpp + 31 ) / 32 ) * 4;
-    let mut line_buffer = vec![0 as u8; line_width as usize];
+    // Read pixel data
+    let size = ( ( header.core.width * header.core.bpp + 31 ) / 32 ) * 4;
+    let mut buffer = Vec::with_capacity( size as usize );
+    let width = header.core.width;
+    let height = header.core.height;
+    let bpp = header.core.bpp;
 
-    for y in 0..core.height {
-        input.read_exact( &mut line_buffer )?; // read whole line
+    let palette = match bpp {
+        1 | 4 | 8 => header.palette.unwrap().colors,
+        _ => Vec::new(),
+    };
 
-        let y = if core.bottom_up {
-            core.height - y - 1
+    for y in 0..height {
+        input.read_exact( &mut buffer )?;
+
+        // Apply bottom-up correction
+        let y = if header.core.bottom_up {
+            height - y - 1
         } else {
             y
         };
 
+        match bpp {
+            1 => decode_1bpp( y, width, &buffer, &palette, &mut decoder ),
+            4 => decode_4bpp( y, width, &buffer, &palette, &mut decoder ),
+            8 => decode_8bpp( y, width, &buffer, &palette, &mut decoder ),
+            24 => decode_24bpp( y, width, &buffer, &mut decoder ),
+            v => panic!( "Unexpected bits per pixel {}", v ),
+        }
+
+
+        /*
         let mut index = 0;
         let mut range = 0..line_width;
         loop {
@@ -368,6 +420,7 @@ pub fn decode<TDecoder: BMPDecoder>(
                 break;
             }
         }
+        */
     }
 
     decoder.build()
