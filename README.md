@@ -6,21 +6,28 @@ A bitmap file decoder for Microsoft *bmp* files.
 
 The following is a rough list of things that are already supported or will be in the future:
 
-- [ ] Microsoft BMP Version 1 Support
-- [x] Microsoft BMP Version 2 support
-- [x] Basic Microsoft BMP Version 3 support
-- [ ] Encoding support for BMP Version 3
-- [ ] 16-/32-bit image support for BMP Version 3
-- [ ] Microsoft BMP Version 4 support
-- [ ] Microsoft BMP Version 5 Support
-- [ ] IBM OS/2 2.x BMP Support
-- [ ] OS/2 Bitmap Array support
-- [ ] OS/2 Color Icon support
-- [ ] OS/2 Color Pointer support
-- [ ] OS/2 Struct Icon support
-- [ ] OS/2 Pointer support
-- [ ] Bitmap Encoding (A simple writer)
-- [ ] Tests (Only internal manual tests for now)
+- [x] 1-bit bitmap
+- [x] 4-bit uncompressed bitmap
+- [ ] 4-bit compressed bitmap
+- [x] 8-bit uncompressed bitmap
+- [ ] 8-bit compressed bitmap
+- [ ] 16-bit bitmap
+- [x] 24-bit bitmap
+- [ ] 32-bit bitmap
+- [ ] Microsoft BMP Version 1 header
+- [x] Microsoft BMP Version 2 header
+- [x] Microsoft BMP Version 3 header
+- [ ] Microsoft BMP Version 4 header
+- [ ] Microsoft BMP Version 5 header
+- [x] IBM OS/2 1.x BMP header (32k x 32k limit)
+- [ ] IBM OS/2 2.x BMP header
+- [ ] OS/2 Bitmap Array type
+- [ ] OS/2 Color Icon type
+- [ ] OS/2 Color Pointer type
+- [ ] OS/2 Struct Icon type
+- [ ] OS/2 Pointer type
+- [ ] Bitmap Encoding
+- [ ] Test suite
 - [ ] Documentation
 - [ ] Examples
 
