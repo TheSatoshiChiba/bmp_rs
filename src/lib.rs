@@ -296,7 +296,6 @@ impl Header {
             match core.bpp {
                 1 | 4 | 8 => {
                     let palette_size = palette_size as usize;
-                    println!("palette_size: {}", palette_size);
                     let color_size = match version {
                         Version::Microsoft2 => 3,
                         _ => 4,
@@ -424,13 +423,6 @@ pub fn decode<TDecoder: Decoder>(
 
     // Read pixel data
     let size = ( ( header.core.width * header.core.bpp + 31 ) / 32 ) * 4;
-    println!("width: {}", header.core.width );
-    println!("height: {}", header.core.height );
-    println!("BPP: {}", header.core.bpp );
-    println!("Size: {}", size);
-    println!("STEP1: {}", header.core.width * header.core.bpp + 31 );
-    println!("STEP2: {}", ( ( header.core.width * header.core.bpp + 31 ) / 32 ) );
-    println!("STEP3: {}", ( ( header.core.width * header.core.bpp + 31 ) / 32 ) * 4 );
     let mut buffer = vec![0; size as usize];
     let width = header.core.width;
     let height = header.core.height;
@@ -442,7 +434,6 @@ pub fn decode<TDecoder: Decoder>(
     };
 
     for y in 0..height {
-        println!("READ BUFFER {}", y);
         input.read_exact( &mut buffer )?;
 
         // Apply bottom-up correction
@@ -462,7 +453,6 @@ pub fn decode<TDecoder: Decoder>(
         }
     }
 
-    println!("DECODE!");
     decoder.build()
 }
 
