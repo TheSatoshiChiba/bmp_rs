@@ -198,8 +198,8 @@ struct Palette {
 }
 
 impl Palette {
-    fn from_buffer( buf: &[u8], size: usize ) -> Result<Palette> {
-        let iter = buf.chunks( 3 );
+    fn from_buffer( buf: &[u8], size: usize, color_size: usize ) -> Result<Palette> {
+        let iter = buf.chunks( color_size );
         let mut colors = Vec::with_capacity( size );
 
         for x in iter {
@@ -215,9 +215,54 @@ impl Palette {
     }
 }
 
+enum Compression {
+    RLE8Bit = 1,
+    RLE4Bit = 2,
+}
+
+struct Info {
+    compression: Option<Compression>,
+    image_size: u32,
+    ppm_x: i32,
+    ppm_y: i32,
+    used_colors: u32,
+    important_colors: u32,
+}
+
+impl Info {
+    fn from_buffer( buf: &[u8], bpp: u32 ) -> Result<Info> {
+        let mut cursor = io::Cursor::new( buf );
+
+        let compression = match cursor.read_u32::<LittleEndian>()? {
+            0 => None,
+            1 if bpp == 8 => Some( Compression::RLE8Bit ),
+            2 if bpp == 4 => Some( Compression::RLE4Bit ),
+            // 3 => Some( Compression::Bitfield ),
+            v @ _ => return Err( DecodingError::new_io(
+                &format!( "Invalid compression {} for {}-bit", v, bpp ) ) ),
+        };
+
+        let image_size = cursor.read_u32::<LittleEndian>()?;
+        let ppm_x = cursor.read_i32::<LittleEndian>()?;
+        let ppm_y = cursor.read_i32::<LittleEndian>()?;
+        let used_colors = cursor.read_u32::<LittleEndian>()?;
+        let important_colors = cursor.read_u32::<LittleEndian>()?;
+
+        Ok ( Info {
+            compression,
+            image_size,
+            ppm_x,
+            ppm_y,
+            used_colors,
+            important_colors,
+        } )
+    }
+}
+
 struct Header {
     version: Version,
     core: Core,
+    info: Option<Info>,
     palette: Option<Palette>,
 }
 
@@ -232,19 +277,35 @@ impl Header {
         input.read_exact( &mut buffer )?;
 
         let core = Core::from_buffer( &buffer, version )?;
+        let info = match version {
+            Version::Microsoft3
+                => Some( Info::from_buffer( &buffer[12..], core.bpp )? ),
+            _ => None,
+        };
 
         // Read palette
-        let palette_size = 1 << core.bpp;
+        let palette_size = match info {
+            Some( ref i ) if i.used_colors == 0 && core.bpp < 16 => 1 << core.bpp,
+            Some( ref i ) => i.used_colors,
+            None => 1 << core.bpp
+        };
+
         // TODO: Check if the size is sensible with the bitmap offset
 
         let palette = if palette_size > 0 {
             match core.bpp {
                 1 | 4 | 8 => {
                     let palette_size = palette_size as usize;
-                    let mut buffer = vec![0; palette_size * 3];
+                    println!("palette_size: {}", palette_size);
+                    let color_size = match version {
+                        Version::Microsoft2 => 3,
+                        _ => 4,
+                    } as usize;
+
+                    let mut buffer = vec![0; palette_size * color_size];
                     input.read_exact( &mut buffer )?;
 
-                    Some( Palette::from_buffer( &buffer, palette_size )? )
+                    Some( Palette::from_buffer( &buffer, palette_size, color_size )? )
                 },
                 _ => return Err( DecodingError::new_io(
                     &format!( "Unexpected color palette of size {}.", palette_size ) ) ),
@@ -253,7 +314,12 @@ impl Header {
             None
         };
 
-        Ok ( Header { version, core, palette } )
+        Ok ( Header {
+            version,
+            core,
+            info,
+            palette
+        } )
     }
 }
 
@@ -358,6 +424,13 @@ pub fn decode<TDecoder: Decoder>(
 
     // Read pixel data
     let size = ( ( header.core.width * header.core.bpp + 31 ) / 32 ) * 4;
+    println!("width: {}", header.core.width );
+    println!("height: {}", header.core.height );
+    println!("BPP: {}", header.core.bpp );
+    println!("Size: {}", size);
+    println!("STEP1: {}", header.core.width * header.core.bpp + 31 );
+    println!("STEP2: {}", ( ( header.core.width * header.core.bpp + 31 ) / 32 ) );
+    println!("STEP3: {}", ( ( header.core.width * header.core.bpp + 31 ) / 32 ) * 4 );
     let mut buffer = vec![0; size as usize];
     let width = header.core.width;
     let height = header.core.height;
@@ -369,6 +442,7 @@ pub fn decode<TDecoder: Decoder>(
     };
 
     for y in 0..height {
+        println!("READ BUFFER {}", y);
         input.read_exact( &mut buffer )?;
 
         // Apply bottom-up correction
@@ -388,6 +462,7 @@ pub fn decode<TDecoder: Decoder>(
         }
     }
 
+    println!("DECODE!");
     decoder.build()
 }
 
@@ -403,20 +478,7 @@ pub fn decode<TDecoder: Decoder>(
 
 
 
-enum Compression {
-    RLE8Bit,
-    RLE4Bit,
-    Bitfield,
-}
 
-struct BMPInfo {
-    compression: Option<Compression>,
-    size: u32,
-    resolution_width: i32,
-    resolution_height: i32,
-    colors: u32,
-    important_colors: u32,
-}
 
 struct BitfieldMask {
     red: u32,
@@ -446,28 +508,6 @@ struct BMPProfile {
     data: u32,
     size: u32,
     reserved: u32,
-}
-
-impl BMPInfo {
-    fn from_reader( input: &mut io::Read ) -> Result<BMPInfo> {
-        let compression = match input.read_u32::<LittleEndian>()? {
-            0 => None,
-            1 => Some( Compression::RLE8Bit ),
-            2 => Some( Compression::RLE4Bit ),
-            3 => Some( Compression::Bitfield ),
-            v @ _ => return Err( DecodingError::new_io(
-                &format!( "Invalid compression {}", v ) ) ),
-        };
-
-        Ok( BMPInfo {
-            compression,
-            size: 0,
-            resolution_width: 0,
-            resolution_height: 0,
-            colors: 0,
-            important_colors: 0,
-        } )
-    }
 }
 
 #[cfg( test )]
