@@ -1,23 +1,26 @@
 //! # bmp_rs
 //!
-//! A bmp (bitmap) file decoder.
+//! A bitmap file decoder for Microsoft *bmp* files.
 //!
 //! ## Example
 //!
-//! ```
+//! ```rust,no_run
 //! use std::fs::File;
 //! use bmp_rs::{
 //!     Result,
-//!     BMPDecorder,
+//!     Decoder,
 //! };
 //!
 //! struct ImageDecoder {
-//!     // your builder type that is able to construct an image
+//!     // Your builder type that is able to construct an image
 //! }
 //!
+//! struct Image {
+//!     // Your image type that represents a bitmap
+//! }
 //!
 //! impl Decoder for ImageDecoder {
-//!     type TResult = MyImageType; // Your image type
+//!     type TResult = Image; // Your image type
 //!
 //!     fn set_size( &mut self, width: u32, height: u32 ) {
 //!         // Set image size
@@ -29,12 +32,13 @@
 //!
 //!     fn build( &mut self ) -> Result<Self::TResult> {
 //!         // Build and return your final image
+//!         Ok ( Image { } )
 //!     }
 //! }
 //!
 //! fn main() {
 //!     let mut file = File::open( "image.bmp" ).unwrap();
-//!     let image = bmp_rs::decode( &mut file, YourImageDecoderInstance );
+//!     let image = bmp_rs::decode( &mut file, ImageDecoder { } );
 //!     // Do something with your image
 //! }
 //! ```
@@ -127,8 +131,8 @@ impl Version { // TODO: Replace with TryFrom when available.
         match size {
             MSVERSION2_SIZE => Ok( Version::Microsoft2 ),
             MSVERSION3_SIZE => Ok( Version::Microsoft3 ),
-            MSVERSION4_SIZE => Ok( Version::Microsoft4 ),
-            MSVERSION5_SIZE => Ok( Version::Microsoft5 ),
+            // MSVERSION4_SIZE => Ok( Version::Microsoft4 ),
+            // MSVERSION5_SIZE => Ok( Version::Microsoft5 ),
             _ => Err( DecodingError::new_io(
                     &format!( "Invalid bitmap header {},", size ) ) ),
         }
@@ -215,6 +219,7 @@ impl Palette {
     }
 }
 
+#[derive( PartialEq, Eq, Clone, Copy )]
 enum Compression {
     RLE8Bit = 1,
     RLE4Bit = 2,
@@ -427,7 +432,11 @@ pub fn decode<TDecoder: Decoder>(
     let width = header.core.width;
     let height = header.core.height;
     let bpp = header.core.bpp;
-
+    let compression = match header.version {
+        Version::Microsoft2 => false,
+        _ if header.info.unwrap().compression.is_some() => true,
+        _ => false,
+    };
     let palette = match bpp {
         1 | 4 | 8 => header.palette.unwrap().colors,
         _ => Vec::new(),
@@ -446,8 +455,20 @@ pub fn decode<TDecoder: Decoder>(
         // Decode pixels
         match bpp {
             1 => decode_1bpp( y, width, &buffer, &palette, &mut decoder ),
-            4 => decode_4bpp( y, width, &buffer, &palette, &mut decoder ),
-            8 => decode_8bpp( y, width, &buffer, &palette, &mut decoder ),
+            4 => {
+                if compression {
+                    panic!("Compression not supported!" );
+                } else {
+                    decode_4bpp( y, width, &buffer, &palette, &mut decoder );
+                }
+            },
+            8 => {
+                if compression {
+                    panic!("Compression not supported!" );
+                } else {
+                    decode_8bpp( y, width, &buffer, &palette, &mut decoder );
+                }
+            },
             24 => decode_24bpp( y, width, &buffer, &mut decoder ),
             v => panic!( "Unexpected bits per pixel {}", v ),
         }
