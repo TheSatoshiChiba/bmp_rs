@@ -1,25 +1,26 @@
 # bmp_rs
 
-A bitmap file decoder.
+A bitmap file decoder for Microsoft *bmp* files.
 
 ## Development Status
 
-This create is in its early stages of development and not all features are fully implemented yet. The public API is still subject to change and documentation is very rare. The major features for this crate are as follows (checked ones are done but still subject to change):
+The following is a rough list of things that are already supported or will be in the future:
 
-- [ ] Microsoft BMP Version 1 Support (If there is interest)
+- [ ] Microsoft BMP Version 1 Support
 - [x] Microsoft BMP Version 2 support
-- [ ] Microsoft BMP Version 3 support
+- [x] Basic Microsoft BMP Version 3 support
+- [ ] Encoding support for BMP Version 3
+- [ ] 16-/32-bit image support for BMP Version 3
 - [ ] Microsoft BMP Version 4 support
 - [ ] Microsoft BMP Version 5 Support
 - [ ] IBM OS/2 2.x BMP Support
-- [ ] Adobe Photoshop BMP Support (At least the "documented" version)
 - [ ] OS/2 Bitmap Array support
 - [ ] OS/2 Color Icon support
 - [ ] OS/2 Color Pointer support
 - [ ] OS/2 Struct Icon support
 - [ ] OS/2 Pointer support
-- [ ] A general bitmap Version 5 writer (writing in other formats makes no sense for now)
-- [ ] Tests (unit and integration)
+- [ ] Bitmap Encoding (A simple writer)
+- [ ] Tests (Only internal manual tests for now)
 - [ ] Documentation
 - [ ] Examples
 
@@ -29,16 +30,19 @@ This create is in its early stages of development and not all features are fully
 use std::fs::File;
 use bmp_rs::{
     Result,
-    BMPDecorder,
+    Decoder,
 };
 
 struct ImageDecoder {
-    // your builder type that is able to construct an image
+    // Your builder type that is able to construct an image
 }
 
+struct Image {
+    // Your image type that represents a bitmap
+}
 
-impl BMPDecoder for ImageDecoder {
-    type TResult = MyImageType; // Your image type
+impl Decoder for ImageDecoder {
+    type TResult = Image; // Your image type
 
     fn set_size( &mut self, width: u32, height: u32 ) {
         // Set image size
@@ -50,12 +54,13 @@ impl BMPDecoder for ImageDecoder {
 
     fn build( &mut self ) -> Result<Self::TResult> {
         // Build and return your final image
+        Ok ( Image { } )
     }
 }
 
 fn main() {
     let mut file = File::open( "image.bmp" ).unwrap();
-    let image = bmp_rs::decode( &mut file, YourImageDecoderInstance );
+    let image = bmp_rs::decode( &mut file, ImageDecoder { } );
     // Do something with your image
 }
 ```
