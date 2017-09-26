@@ -8,10 +8,10 @@
 //! use std::fs::File;
 //! use bmp_rs::{
 //!     Result,
-//!     Decoder,
+//!     Builder,
 //! };
 //!
-//! struct ImageDecoder {
+//! struct ImageBuilder {
 //!     // Your builder type that is able to construct an image
 //! }
 //!
@@ -19,7 +19,7 @@
 //!     // Your image type that represents a bitmap
 //! }
 //!
-//! impl Decoder for ImageDecoder {
+//! impl Builder for ImageBuilder {
 //!     type TResult = Image; // Your image type
 //!
 //!     fn set_size( &mut self, width: u32, height: u32 ) {
@@ -38,7 +38,7 @@
 //!
 //! fn main() {
 //!     let mut file = File::open( "image.bmp" ).unwrap();
-//!     let image = bmp_rs::decode( &mut file, ImageDecoder { } );
+//!     let image = bmp_rs::decode( &mut file, ImageBuilder { } );
 //!     // Do something with your image
 //! }
 //! ```
@@ -105,7 +105,7 @@ struct Color {
     a: u8,
 }
 
-pub trait Decoder {
+pub trait Builder {
     type TResult;
 
     fn set_size( &mut self, width: u32, height: u32 );
@@ -327,8 +327,8 @@ impl Header {
     }
 }
 
-fn decode_1bpp<TDecoder: Decoder>(
-    y: u32, width: u32, buf: &[u8], palette: &[Color], decoder: &mut TDecoder ) {
+fn decode_1bpp<TBuilder: Builder>(
+    y: u32, width: u32, buf: &[u8], palette: &[Color], builder: &mut TBuilder ) {
 
     let mut x: u32 = 0;
 
@@ -336,7 +336,7 @@ fn decode_1bpp<TDecoder: Decoder>(
         for bit in (0..8).rev() {
 
             let color: Color = palette[ ( ( *byte >> bit ) & 0x01 ) as usize ];
-            decoder.set_pixel( x, y, color.r, color.g, color.b, color.a );
+            builder.set_pixel( x, y, color.r, color.g, color.b, color.a );
 
             x += 1;
             if x >= width {
@@ -346,14 +346,14 @@ fn decode_1bpp<TDecoder: Decoder>(
     }
 }
 
-fn decode_4bpp<TDecoder: Decoder>(
-    y: u32, width: u32, buf: &[u8], palette: &[Color], decoder: &mut TDecoder ) {
+fn decode_4bpp<TBuilder: Builder>(
+    y: u32, width: u32, buf: &[u8], palette: &[Color], builder: &mut TBuilder ) {
 
     let mut x: u32 = 0;
 
     for byte in buf {
         let color = palette[ ( ( *byte >> 4 ) & 0x0F ) as usize ];
-        decoder.set_pixel( x, y, color.r, color.g, color.b, color.a );
+        builder.set_pixel( x, y, color.r, color.g, color.b, color.a );
 
         x += 1;
         if x >= width {
@@ -361,7 +361,7 @@ fn decode_4bpp<TDecoder: Decoder>(
         }
 
         let color = palette[ ( *byte & 0x0F ) as usize ];
-        decoder.set_pixel( x, y, color.r, color.g, color.b, color.a );
+        builder.set_pixel( x, y, color.r, color.g, color.b, color.a );
 
         x += 1;
         if x >= width {
@@ -370,14 +370,14 @@ fn decode_4bpp<TDecoder: Decoder>(
     }
 }
 
-fn decode_8bpp<TDecoder: Decoder>(
-    y: u32, width: u32, buf: &[u8], palette: &[Color], decoder: &mut TDecoder ) {
+fn decode_8bpp<TBuilder: Builder>(
+    y: u32, width: u32, buf: &[u8], palette: &[Color], builder: &mut TBuilder ) {
 
     let mut x: u32 = 0;
 
     for byte in buf {
         let color = palette[ *byte as usize ];
-        decoder.set_pixel( x, y, color.r, color.g, color.b, color.a );
+        builder.set_pixel( x, y, color.r, color.g, color.b, color.a );
 
         x += 1;
         if x >= width {
@@ -386,13 +386,13 @@ fn decode_8bpp<TDecoder: Decoder>(
     }
 }
 
-fn decode_24bpp<TDecoder: Decoder>(
-    y: u32, width: u32, buf: &[u8], decoder: &mut TDecoder ) {
+fn decode_24bpp<TBuilder: Builder>(
+    y: u32, width: u32, buf: &[u8], builder: &mut TBuilder ) {
 
     let mut x: u32 = 0;
 
     for bytes in buf.chunks( 3 ) {
-        decoder.set_pixel( x, y, bytes[2], bytes[1], bytes[0], 255 );
+        builder.set_pixel( x, y, bytes[2], bytes[1], bytes[0], 255 );
 
         x += 1;
         if x >= width {
@@ -401,8 +401,8 @@ fn decode_24bpp<TDecoder: Decoder>(
     }
 }
 
-pub fn decode<TDecoder: Decoder>(
-    input: &mut io::Read, mut decoder: TDecoder ) -> Result<TDecoder::TResult> {
+pub fn decode<TBuilder: Builder>(
+    input: &mut io::Read, mut builder: TBuilder ) -> Result<TBuilder::TResult> {
 
     // Read file header
     let mut header: [u8; 14] = [0; 14];
@@ -424,7 +424,7 @@ pub fn decode<TDecoder: Decoder>(
     let header = Header::from_reader( input )?;
 
     // Set output size
-    decoder.set_size( header.core.width, header.core.height );
+    builder.set_size( header.core.width, header.core.height );
 
     // Read pixel data
     let size = ( ( header.core.width * header.core.bpp + 31 ) / 32 ) * 4;
@@ -454,27 +454,27 @@ pub fn decode<TDecoder: Decoder>(
 
         // Decode pixels
         match bpp {
-            1 => decode_1bpp( y, width, &buffer, &palette, &mut decoder ),
+            1 => decode_1bpp( y, width, &buffer, &palette, &mut builder ),
             4 => {
                 if compression {
                     panic!("Compression not supported!" );
                 } else {
-                    decode_4bpp( y, width, &buffer, &palette, &mut decoder );
+                    decode_4bpp( y, width, &buffer, &palette, &mut builder );
                 }
             },
             8 => {
                 if compression {
                     panic!("Compression not supported!" );
                 } else {
-                    decode_8bpp( y, width, &buffer, &palette, &mut decoder );
+                    decode_8bpp( y, width, &buffer, &palette, &mut builder );
                 }
             },
-            24 => decode_24bpp( y, width, &buffer, &mut decoder ),
+            24 => decode_24bpp( y, width, &buffer, &mut builder ),
             v => panic!( "Unexpected bits per pixel {}", v ),
         }
     }
 
-    decoder.build()
+    builder.build()
 }
 
 
