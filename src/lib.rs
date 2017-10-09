@@ -387,7 +387,7 @@ fn decode_8bpp<TBuilder: Builder>(
 }
 
 fn decode_24bpp<TBuilder: Builder>(
-    y: u32, width: u32, buf: &[u8], builder: &mut TBuilder ) {
+    y: u32, width: u32, buf: &[u8], palette: &[Color], builder: &mut TBuilder ) {
 
     let mut x: u32 = 0;
 
@@ -399,6 +399,11 @@ fn decode_24bpp<TBuilder: Builder>(
             break;
         }
     }
+}
+
+fn decode_nothing<TBuilder: Builder>(
+    y: u32, width: u32, buf: &[u8], palette: &[Color], builder: &mut TBuilder ) {
+    // no-op
 }
 
 pub fn decode<TBuilder: Builder>(
@@ -442,6 +447,14 @@ pub fn decode<TBuilder: Builder>(
         _ => Vec::new(),
     };
 
+    let decode_row = match bpp {
+        1 => decode_1bpp::<TBuilder>,
+        4 => decode_4bpp::<TBuilder>,
+        8 => decode_8bpp::<TBuilder>,
+        24 => decode_24bpp::<TBuilder>,
+        _ => decode_nothing::<TBuilder>,
+    };
+
     for y in 0..height {
         input.read_exact( &mut buffer )?;
 
@@ -452,26 +465,7 @@ pub fn decode<TBuilder: Builder>(
             y
         };
 
-        // Decode pixels
-        match bpp {
-            1 => decode_1bpp( y, width, &buffer, &palette, &mut builder ),
-            4 => {
-                if compression {
-                    panic!("Compression not supported!" );
-                } else {
-                    decode_4bpp( y, width, &buffer, &palette, &mut builder );
-                }
-            },
-            8 => {
-                if compression {
-                    panic!("Compression not supported!" );
-                } else {
-                    decode_8bpp( y, width, &buffer, &palette, &mut builder );
-                }
-            },
-            24 => decode_24bpp( y, width, &buffer, &mut builder ),
-            v => panic!( "Unexpected bits per pixel {}", v ),
-        }
+        decode_row( y, width, &buffer, &palette, &mut builder );
     }
 
     builder.build()
