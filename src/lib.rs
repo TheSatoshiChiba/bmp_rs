@@ -108,8 +108,9 @@ struct Color {
 pub trait Builder {
     type TResult;
 
+    fn set_row( &mut self, row: u32 );
     fn set_size( &mut self, width: u32, height: u32 );
-    fn set_pixel( &mut self, x: u32, y: u32, r: u8, g: u8, b: u8, a: u8 );
+    fn set_pixel( &mut self, x: u32, r: u8, g: u8, b: u8, a: u8 );
     fn build( &mut self ) -> Result<Self::TResult>;
 }
 
@@ -328,7 +329,7 @@ impl Header {
 }
 
 fn decode_1bpp<TBuilder: Builder>(
-    y: u32, width: u32, buf: &[u8], palette: &[Color], builder: &mut TBuilder ) {
+    width: u32, buf: &[u8], palette: &[Color], builder: &mut TBuilder ) {
 
     let mut x: u32 = 0;
 
@@ -336,7 +337,7 @@ fn decode_1bpp<TBuilder: Builder>(
         for bit in (0..8).rev() {
 
             let color: Color = palette[ ( ( *byte >> bit ) & 0x01 ) as usize ];
-            builder.set_pixel( x, y, color.r, color.g, color.b, color.a );
+            builder.set_pixel( x, color.r, color.g, color.b, color.a );
 
             x += 1;
             if x >= width {
@@ -347,13 +348,13 @@ fn decode_1bpp<TBuilder: Builder>(
 }
 
 fn decode_4bpp<TBuilder: Builder>(
-    y: u32, width: u32, buf: &[u8], palette: &[Color], builder: &mut TBuilder ) {
+    width: u32, buf: &[u8], palette: &[Color], builder: &mut TBuilder ) {
 
     let mut x: u32 = 0;
 
     for byte in buf {
         let color = palette[ ( ( *byte >> 4 ) & 0x0F ) as usize ];
-        builder.set_pixel( x, y, color.r, color.g, color.b, color.a );
+        builder.set_pixel( x, color.r, color.g, color.b, color.a );
 
         x += 1;
         if x >= width {
@@ -361,7 +362,7 @@ fn decode_4bpp<TBuilder: Builder>(
         }
 
         let color = palette[ ( *byte & 0x0F ) as usize ];
-        builder.set_pixel( x, y, color.r, color.g, color.b, color.a );
+        builder.set_pixel( x, color.r, color.g, color.b, color.a );
 
         x += 1;
         if x >= width {
@@ -371,13 +372,13 @@ fn decode_4bpp<TBuilder: Builder>(
 }
 
 fn decode_8bpp<TBuilder: Builder>(
-    y: u32, width: u32, buf: &[u8], palette: &[Color], builder: &mut TBuilder ) {
+    width: u32, buf: &[u8], palette: &[Color], builder: &mut TBuilder ) {
 
     let mut x: u32 = 0;
 
     for byte in buf {
         let color = palette[ *byte as usize ];
-        builder.set_pixel( x, y, color.r, color.g, color.b, color.a );
+        builder.set_pixel( x, color.r, color.g, color.b, color.a );
 
         x += 1;
         if x >= width {
@@ -387,12 +388,12 @@ fn decode_8bpp<TBuilder: Builder>(
 }
 
 fn decode_24bpp<TBuilder: Builder>(
-    y: u32, width: u32, buf: &[u8], palette: &[Color], builder: &mut TBuilder ) {
+    width: u32, buf: &[u8], palette: &[Color], builder: &mut TBuilder ) {
 
     let mut x: u32 = 0;
 
     for bytes in buf.chunks( 3 ) {
-        builder.set_pixel( x, y, bytes[2], bytes[1], bytes[0], 255 );
+        builder.set_pixel( x, bytes[2], bytes[1], bytes[0], 255 );
 
         x += 1;
         if x >= width {
@@ -402,7 +403,7 @@ fn decode_24bpp<TBuilder: Builder>(
 }
 
 fn decode_nothing<TBuilder: Builder>(
-    y: u32, width: u32, buf: &[u8], palette: &[Color], builder: &mut TBuilder ) {
+    width: u32, buf: &[u8], palette: &[Color], builder: &mut TBuilder ) {
     // no-op
 }
 
@@ -458,14 +459,9 @@ pub fn decode<TBuilder: Builder>(
     for y in 0..height {
         input.read_exact( &mut buffer )?;
 
-        // Apply bottom-up correction
-        let y = if header.core.bottom_up {
-            height - y - 1
-        } else {
-            y
-        };
+        builder.set_row( if header.core.bottom_up { height - y - 1 } else { y } );
 
-        decode_row( y, width, &buffer, &palette, &mut builder );
+        decode_row( width, &buffer, &palette, &mut builder );
     }
 
     builder.build()
