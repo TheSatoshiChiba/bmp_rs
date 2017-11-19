@@ -52,6 +52,7 @@ use std::fmt;
 use byteorder::{
     ReadBytesExt,
     LittleEndian,
+    BigEndian,
 };
 
 #[derive( Debug )]
@@ -224,6 +225,7 @@ impl Palette {
 enum Compression {
     RLE8Bit = 1,
     RLE4Bit = 2,
+    Bitfield = 3,
 }
 
 struct Info {
@@ -243,7 +245,7 @@ impl Info {
             0 => None,
             1 if bpp == 8 => Some( Compression::RLE8Bit ),
             2 if bpp == 4 => Some( Compression::RLE4Bit ),
-            // 3 => Some( Compression::Bitfield ),
+            3 if bpp == 16 || bpp == 32 => Some( Compression::Bitfield ),
             v @ _ => return Err( DecodingError::new_io(
                 &format!( "Invalid compression {} for {}-bit", v, bpp ) ) ),
         };
@@ -265,11 +267,30 @@ impl Info {
     }
 }
 
+struct BitfieldMask {
+    red: u32,
+    green: u32,
+    blue: u32,
+}
+
+impl BitfieldMask {
+    fn from_buffer( buf: &[u8] ) -> Result<BitfieldMask> {
+        let mut cursor = io::Cursor::new( buf );
+
+        let red = cursor.read_u32::<BigEndian>()?;
+        let green = cursor.read_u32::<BigEndian>()?;
+        let blue = cursor.read_u32::<BigEndian>()?;
+
+        Ok( BitfieldMask { red, green, blue } )
+    }
+}
+
 struct Header {
     version: Version,
     core: Core,
     info: Option<Info>,
     palette: Option<Palette>,
+    bitmask: Option<BitfieldMask>,
 }
 
 impl Header {
@@ -289,11 +310,27 @@ impl Header {
             _ => None,
         };
 
+        // Read Bitmask
+        let bitmask = match info {
+            Some( ref i ) => {
+                match i.compression {
+                    Some( Compression::Bitfield ) => {
+                        let mut buffer = vec![0; 12];
+                        input.read_exact( &mut buffer )?;
+
+                        Some( BitfieldMask::from_buffer( &buffer )? )
+                    },
+                    _ => None,
+                }
+            }
+            None => None,
+        };
+
         // Read palette
         let palette_size = match info {
             Some( ref i ) if i.used_colors == 0 && core.bpp < 16 => 1 << core.bpp,
             Some( ref i ) => i.used_colors,
-            None => 1 << core.bpp
+            None => 1 << core.bpp,
         };
 
         // TODO: Check if the size is sensible with the bitmap offset
@@ -323,7 +360,8 @@ impl Header {
             version,
             core,
             info,
-            palette
+            palette,
+            bitmask,
         } )
     }
 }
@@ -481,12 +519,7 @@ pub fn decode<TBuilder: Builder>(
 
 
 
-struct BitfieldMask {
-    red: u32,
-    green: u32,
-    blue: u32,
-    alpha: u32,
-}
+
 
 struct BMPExtra {
     color_space_type: u32,
