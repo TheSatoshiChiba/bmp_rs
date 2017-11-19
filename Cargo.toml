@@ -1,6 +1,6 @@
 [package]
 name = "bmp_rs"
-version = "0.0.3"
+version = "0.0.4"
 authors = [ "Daniel Drywa <daniel@drywa.me>" ]
 description = "A bitmap file decoder for Microsoft bmp files"
 #documentation = ""
