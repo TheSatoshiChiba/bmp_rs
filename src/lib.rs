@@ -276,9 +276,9 @@ impl BitfieldMask {
     fn from_buffer( buf: &[u8] ) -> Result<BitfieldMask> {
         let mut cursor = io::Cursor::new( buf );
 
-        let red = cursor.read_u32::<BigEndian>()?;
-        let green = cursor.read_u32::<BigEndian>()?;
-        let blue = cursor.read_u32::<BigEndian>()?;
+        let red = cursor.read_u32::<LittleEndian>()?;
+        let green = cursor.read_u32::<LittleEndian>()?;
+        let blue = cursor.read_u32::<LittleEndian>()?;
 
         Ok( BitfieldMask { red, green, blue } )
     }
@@ -319,6 +319,17 @@ impl Header {
 
                         Some( BitfieldMask::from_buffer( &buffer )? )
                     },
+                    _ if core.bpp == 16 => {
+                        let red = 0x7C00 as u32;
+                        let green = 0x3E0 as u32;
+                        let blue = 0x1F as u32;
+
+                        Some( BitfieldMask {
+                            red,
+                            green,
+                            blue,
+                        } )
+                    }
                     _ => None,
                 }
             }
@@ -409,7 +420,7 @@ fn decode_4bpp<TBuilder: Builder>(
 }
 
 fn decode_8bpp<TBuilder: Builder>(
-    width: u32, row: u32, buf: &[u8], palette: &[Color], mask: &BitfieldMask, builder: &mut TBuilder ) {
+    width: u32, row: u32, buf: &[u8], palette: &[Color], _mask: &BitfieldMask, builder: &mut TBuilder ) {
 
     let mut x: u32 = 0;
 
@@ -426,6 +437,37 @@ fn decode_8bpp<TBuilder: Builder>(
 
 fn decode_16bpp<TBuilder: Builder>(
     width: u32, row: u32, buf: &[u8], palette: &[Color], mask: &BitfieldMask, builder: &mut TBuilder ) {
+
+    let mut x: u32 = 0;
+
+    let red_shift = mask.red.trailing_zeros();
+    let green_shift = mask.green.trailing_zeros();
+    let blue_shift = mask.blue.trailing_zeros();
+
+    let red_max = mask.red >> red_shift;
+    let green_max = mask.green >> green_shift;
+    let blue_max = mask.blue >> blue_shift;
+
+    for mut bytes in buf.chunks( 2 ) {
+        let color = bytes.read_u16::<LittleEndian>().unwrap() as u32;
+
+        let red = ( ( 255 * ( ( color & mask.red ) >> red_shift ) ) / red_max ) as u8;
+        let green = ( ( 255 * ( ( color & mask.green ) >> green_shift ) ) / green_max ) as u8;
+        let blue = ( ( 255 * ( ( color & mask.blue ) >> blue_shift ) ) / blue_max ) as u8;
+
+        builder.set_pixel(
+            x,
+            row,
+            red,
+            green,
+            blue,
+            255 );
+
+        x += 1;
+        if x >= width {
+            break;
+        }
+    }
 }
 
 fn decode_24bpp<TBuilder: Builder>(
