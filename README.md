@@ -11,9 +11,9 @@ The following is a rough list of things that are already supported or will be in
 - [ ] 4-bit compressed bitmap
 - [x] 8-bit uncompressed bitmap
 - [ ] 8-bit compressed bitmap
-- [ ] 16-bit bitmap
+- [x] 16-bit bitmap
 - [x] 24-bit bitmap
-- [ ] 32-bit bitmap
+- [x] 32-bit bitmap
 - [ ] Microsoft BMP Version 1 header
 - [x] Microsoft BMP Version 2 header
 - [x] Microsoft BMP Version 3 header
