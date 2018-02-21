@@ -567,9 +567,13 @@ pub fn decode<TBuilder: Builder>(
     let width = header.core.width;
     let height = header.core.height;
     let bpp = header.core.bpp;
+    let info = header.info;
     let compression = match header.version {
         Version::Microsoft2 => false,
-        _ if header.info.unwrap().compression.is_some() => true,
+        _ if match info {
+            Some( ref i ) => if i.compression.is_some() { true } else { false },
+            None => false,
+        } => true,
         _ => false,
     };
     let palette = match bpp {
@@ -584,20 +588,97 @@ pub fn decode<TBuilder: Builder>(
 
     let decode_row = match bpp {
         1 => decode_1bpp::<TBuilder>,
-        4 => decode_4bpp::<TBuilder>,
-        8 => decode_8bpp::<TBuilder>,
+        4 if !compression => decode_4bpp::<TBuilder>,
+        8 if !compression => decode_8bpp::<TBuilder>,
         16 => decode_16bpp::<TBuilder>,
         24 => decode_24bpp::<TBuilder>,
         32 => decode_32bpp::<TBuilder>,
         _ => decode_nothing::<TBuilder>,
     };
 
-    for y in 0..height {
+    if bpp == 8 && compression {
+        let count = info.unwrap().image_size as usize;
+        if count == 0 {
+            panic!( "Image size in bytes can't be null when using RLE8 compression" );
+        }
+        let mut buffer = vec![0; count];
         input.read_exact( &mut buffer )?;
+        let buffer = buffer;
 
-        let row = if header.core.bottom_up { height - y - 1 } else { y };
+        let mut x: u32 = 0;
+        let mut y: u32 = if header.core.bottom_up { height - 1 } else { 0 };
+        let mut index: usize = 0;
+        let row_mod: i32 = if header.core.bottom_up { -1 } else { 1 };
 
-        decode_row( width, row, &buffer, &palette, &mask, &mut builder );
+        loop {
+            if index >= count {
+                break;
+            }
+
+            let first = buffer[ index ] as usize;
+            let second = buffer[ index + 1 ] as usize;
+            index += 2;
+
+            if first == 0 {
+                if second == 0 {
+                    x = 0;
+                    y = ( ( y as i32 ) + row_mod ) as u32;
+
+                } else if second == 1 {
+                    break;
+
+                } else if second == 2 {
+                    panic!("Location markers in RLE not supported yet");
+
+                } else {
+                    for _ in 0..second {
+                        if x >= width {
+                            x = 0;
+                            y = ( ( y as i32 ) + row_mod ) as u32;
+                        }
+
+                        let color = palette[ buffer[ index ] as usize ];
+
+                        builder.set_pixel( x, y, color.r, color.g, color.b, color.a );
+                        x += 1;
+                        
+                        index += 1;
+                        if index >= count {
+                            break;
+                        }
+                    }
+                    index += match second % 2 {
+                        0 => 0,
+                        _ => 1,
+                    };
+                }
+
+            } else {
+                let color = palette[ second ];
+
+                for _ in 0..first {
+                    if x >= width {
+                        x = 0;
+                        y = ( ( y as i32 ) + row_mod ) as u32;
+                    }
+
+                    builder.set_pixel( x, y, color.r, color.g, color.b, color.a );
+                    x += 1;
+                }
+            }
+        }
+
+    } else if bpp == 4 && compression {
+        panic!( "4-bit RLE not supported yet!" );
+
+    } else {
+        for y in 0..height {
+            input.read_exact( &mut buffer )?;
+
+            let row = if header.core.bottom_up { height - y - 1 } else { y };
+
+            decode_row( width, row, &buffer, &palette, &mask, &mut builder );
+        }
     }
 
     builder.build()
