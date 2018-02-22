@@ -674,8 +674,123 @@ pub fn decode<TBuilder: Builder>(
         }
 
     } else if bpp == 4 && compression {
-        panic!( "4-bit RLE not supported yet!" );
+        let count = info.unwrap().image_size as usize;
+        if count == 0 {
+            panic!( "Image size in bytes can't be null when using RLE4 compression" );
+        }
+        let mut buffer = vec![0; count];
+        input.read_exact( &mut buffer )?;
+        let buffer = buffer;
 
+        let mut x: u32 = 0;
+        let mut y: u32 = if header.core.bottom_up { height - 1 } else { 0 };
+        let mut index: usize = 0;
+        let row_mod: i32 = if header.core.bottom_up { -1 } else { 1 };
+
+        loop {
+            if index >= count {
+                break;
+            }
+            let first = buffer[ index ] as usize;
+            let second = buffer[ index + 1 ];
+            index += 2;
+
+            if first == 0 {
+                if second == 0 {
+                    x = 0;
+                    y = ( ( y as i32 ) + row_mod ) as u32;
+
+                } else if second == 1 {
+                    break;
+
+                } else if second == 2 {
+                    let dx = buffer[ index ] as u32;
+                    let dy = buffer[ index + 1 ] as i32 * row_mod;
+                    index += 2;
+
+                    x += dx;
+                    y = ( y as i32 + dy ) as u32;
+
+                } else {
+                    let even = second % 2 == 0;
+                    let second_len = if !even {
+                        second as usize + 1
+                    } else {
+                        second as usize
+                    } / 2;
+
+                    for i in 0..second_len {
+                        if x >= width {
+                            x = 0;
+                            y = ( ( y as i32 ) + row_mod ) as u32;
+                        }
+
+                        let byte = buffer[ index ];
+                        let color = palette[ ( ( byte >> 4 ) & 0x0F ) as usize ];
+                        
+                        builder.set_pixel( x, y, color.r, color.g, color.b, color.a );
+                        x += 1;
+
+                        if i < second_len - 1 {
+                            if x >= width {
+                                x = 0;
+                                y = ( ( y as i32 ) + row_mod ) as u32;
+                            }
+
+                            let color = palette[ ( byte & 0x0F ) as usize ];
+                            
+                            builder.set_pixel( x, y, color.r, color.g, color.b, color.a );
+                            x += 1;
+                        } else if even {
+                            if x >= width {
+                                x = 0;
+                                y = ( ( y as i32 ) + row_mod ) as u32;
+                            }
+
+                            let color = palette[ ( byte & 0x0F ) as usize ];
+                            
+                            builder.set_pixel( x, y, color.r, color.g, color.b, color.a );
+                            x += 1;
+                        }
+
+                        index += 1;
+                        if index >= count {
+                            break;
+                        }
+                    }
+                    index += match second_len % 2 {
+                        0 => 0,
+                        _ => 1,
+                    };
+                }
+
+            } else {
+                let color1 = palette[ ( ( second >> 4 ) & 0x0F ) as usize ];
+                let color2 = palette[ ( second & 0x0F ) as usize ]; 
+
+                let mut control = false;
+                for _ in 0..first {
+                    let color = match control {
+                        true => {
+                            control = false;
+                            &color2
+                        },
+                        false => {
+                            control = true;
+                            &color1
+                        },
+                    };
+
+                    if x >= width {
+                        x = 0;
+                        y = ( ( y as i32 ) + row_mod ) as u32;
+                    }
+
+                    builder.set_pixel( x, y, color.r, color.g, color.b, color.a );
+                    x += 1;
+                }
+            }
+        }
     } else {
         for y in 0..height {
             input.read_exact( &mut buffer )?;
