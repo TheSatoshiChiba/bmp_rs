@@ -8,7 +8,7 @@ The following is a rough list of things that are already supported or will be in
 
 - [x] 1-bit bitmap
 - [x] 4-bit uncompressed bitmap
-- [ ] 4-bit compressed bitmap
+- [x] 4-bit compressed bitmap
 - [x] 8-bit uncompressed bitmap
 - [x] 8-bit compressed bitmap
 - [x] 16-bit bitmap
