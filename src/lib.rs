@@ -628,7 +628,12 @@ pub fn decode<TBuilder: Builder>(
                     break;
 
                 } else if second == 2 {
-                    panic!("Location markers in RLE not supported yet");
+                    let dx = buffer[ index ] as u32;
+                    let dy = buffer[ index + 1 ] as i32 * row_mod;
+                    index += 2;
+
+                    x += dx;
+                    y = ( y as i32 + dy ) as u32;
 
                 } else {
                     for _ in 0..second {
