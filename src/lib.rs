@@ -132,7 +132,7 @@ impl Version { // TODO: Replace with TryFrom when available.
         match size {
             MSVERSION2_SIZE => Ok( Version::Microsoft2 ),
             MSVERSION3_SIZE => Ok( Version::Microsoft3 ),
-            // MSVERSION4_SIZE => Ok( Version::Microsoft4 ),
+            MSVERSION4_SIZE => Ok( Version::Microsoft4 ),
             // MSVERSION5_SIZE => Ok( Version::Microsoft5 ),
             _ => Err( DecodingError::new_io(
                     &format!( "Invalid bitmap header {},", size ) ) ),
@@ -646,7 +646,7 @@ pub fn decode<TBuilder: Builder>(
 
                         builder.set_pixel( x, y, color.r, color.g, color.b, color.a );
                         x += 1;
-                        
+
                         index += 1;
                         if index >= count {
                             break;
@@ -727,7 +727,7 @@ pub fn decode<TBuilder: Builder>(
 
                         let byte = buffer[ index ];
                         let color = palette[ ( ( byte >> 4 ) & 0x0F ) as usize ];
-                        
+
                         builder.set_pixel( x, y, color.r, color.g, color.b, color.a );
                         x += 1;
 
@@ -738,7 +738,7 @@ pub fn decode<TBuilder: Builder>(
                             }
 
                             let color = palette[ ( byte & 0x0F ) as usize ];
-                            
+
                             builder.set_pixel( x, y, color.r, color.g, color.b, color.a );
                             x += 1;
                         } else if even {
@@ -748,7 +748,7 @@ pub fn decode<TBuilder: Builder>(
                             }
 
                             let color = palette[ ( byte & 0x0F ) as usize ];
-                            
+
                             builder.set_pixel( x, y, color.r, color.g, color.b, color.a );
                             x += 1;
                         }
@@ -766,7 +766,7 @@ pub fn decode<TBuilder: Builder>(
 
             } else {
                 let color1 = palette[ ( ( second >> 4 ) & 0x0F ) as usize ];
-                let color2 = palette[ ( second & 0x0F ) as usize ]; 
+                let color2 = palette[ ( second & 0x0F ) as usize ];
 
                 let mut control = false;
                 for _ in 0..first {
