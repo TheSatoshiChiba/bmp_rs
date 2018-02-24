@@ -203,17 +203,24 @@ struct Palette {
 }
 
 impl Palette {
-    fn from_buffer( buf: &[u8], size: usize, color_size: usize ) -> Result<Palette> {
+    fn from_buffer(
+        buf: &[u8], size: usize, color_size: usize, has_alpha: bool ) -> Result<Palette> {
+
         let iter = buf.chunks( color_size );
         let mut colors = Vec::with_capacity( size );
 
         for x in iter {
+            let a = match has_alpha {
+                true => x[3],
+                false => 255,
+            };
+
             colors.push(
                 Color {
                     b: x[0],
                     g: x[1],
                     r: x[2],
-                    a: 255,
+                    a,
                 } );
         }
         Ok( Palette { colors } )
@@ -270,17 +277,22 @@ struct BitfieldMask {
     red: u32,
     green: u32,
     blue: u32,
+    alpha: u32,
 }
 
 impl BitfieldMask {
-    fn from_buffer( buf: &[u8] ) -> Result<BitfieldMask> {
+    fn from_buffer( buf: &[u8], has_alpha: bool ) -> Result<BitfieldMask> {
         let mut cursor = io::Cursor::new( buf );
 
         let red = cursor.read_u32::<LittleEndian>()?;
         let green = cursor.read_u32::<LittleEndian>()?;
         let blue = cursor.read_u32::<LittleEndian>()?;
+        let alpha = match has_alpha {
+            true => cursor.read_u32::<LittleEndian>()?,
+            false => 0,
+        };
 
-        Ok( BitfieldMask { red, green, blue } )
+        Ok( BitfieldMask { red, green, blue, alpha } )
     }
 }
 
@@ -309,6 +321,11 @@ impl Header {
             _ => None,
         };
 
+        let has_alpha = match version {
+            Version::Microsoft4 => true,
+            _ => false,
+        };
+
         // Read Bitmask
         let bitmask = match info {
             Some( ref i ) => {
@@ -317,28 +334,32 @@ impl Header {
                         let mut buffer = vec![0; 12];
                         input.read_exact( &mut buffer )?;
 
-                        Some( BitfieldMask::from_buffer( &buffer )? )
+                        Some( BitfieldMask::from_buffer( &buffer, has_alpha )? )
                     },
                     _ if core.bpp == 16 => {
                         let red = 0x7C00 as u32;
                         let green = 0x3E0 as u32;
                         let blue = 0x1F as u32;
+                        let alpha = 0x00 as u32;
 
                         Some( BitfieldMask {
                             red,
                             green,
                             blue,
+                            alpha,
                         } )
                     },
                     _ if core.bpp == 32 => {
                         let red = 0xFF0000 as u32;
                         let green = 0xFF00 as u32;
                         let blue = 0xFF as u32;
+                        let alpha = 0x00 as u32;
 
                         Some( BitfieldMask {
                             red,
                             green,
                             blue,
+                            alpha,
                         } )
                     },
                     _ => None,
@@ -368,7 +389,8 @@ impl Header {
                     let mut buffer = vec![0; palette_size * color_size];
                     input.read_exact( &mut buffer )?;
 
-                    Some( Palette::from_buffer( &buffer, palette_size, color_size )? )
+                    Some( Palette::from_buffer(
+                        &buffer, palette_size, color_size, has_alpha )? )
                 },
                 _ => return Err( DecodingError::new_io(
                     &format!( "Unexpected color palette of size {}.", palette_size ) ) ),
@@ -451,9 +473,15 @@ fn decode_16bpp<TBuilder: Builder>(
 
     let mut x: u32 = 0;
 
+    let alpha_shift = mask.red.trailing_zeros();
     let red_shift = mask.red.trailing_zeros();
     let green_shift = mask.green.trailing_zeros();
     let blue_shift = mask.blue.trailing_zeros();
+
+    let alpha_max = match mask.alpha {
+        0 => 0,
+        alpha @ _ => alpha >> alpha_shift,
+    };
 
     let red_max = mask.red >> red_shift;
     let green_max = mask.green >> green_shift;
@@ -461,6 +489,11 @@ fn decode_16bpp<TBuilder: Builder>(
 
     for mut bytes in buf.chunks( 2 ) {
         let color = bytes.read_u16::<LittleEndian>().unwrap() as u32;
+
+        let alpha = match alpha_max {
+            0 => 255,
+            _ => ( ( 255 * ( ( color & mask.alpha ) >> alpha_shift ) ) / alpha_max ) as u8,
+        };
 
         let red = ( ( 255 * ( ( color & mask.red ) >> red_shift ) ) / red_max ) as u8;
         let green = ( ( 255 * ( ( color & mask.green ) >> green_shift ) ) / green_max ) as u8;
@@ -472,7 +505,7 @@ fn decode_16bpp<TBuilder: Builder>(
             red,
             green,
             blue,
-            255 );
+            alpha );
 
         x += 1;
         if x >= width {
@@ -501,9 +534,16 @@ fn decode_32bpp<TBuilder: Builder>(
 
     let mut x: u32 = 0;
 
+    let alpha_shift = mask.alpha.trailing_zeros();
+
     let red_shift = mask.red.trailing_zeros();
     let green_shift = mask.green.trailing_zeros();
     let blue_shift = mask.blue.trailing_zeros();
+
+    let alpha_max = match mask.alpha {
+        0 => 0,
+        alpha @ _ => alpha >> alpha_shift,
+    };
 
     let red_max = mask.red >> red_shift;
     let green_max = mask.green >> green_shift;
@@ -511,6 +551,11 @@ fn decode_32bpp<TBuilder: Builder>(
 
     for mut bytes in buf.chunks( 4 ) {
         let color = bytes.read_u32::<LittleEndian>().unwrap() as u32;
+
+        let alpha = match alpha_max {
+            0 => 255,
+            _ => ( ( 255 * ( ( color & mask.alpha ) >> alpha_shift ) ) / alpha_max ) as u8,
+        };
 
         let red = ( ( 255 * ( ( color & mask.red ) >> red_shift ) ) / red_max ) as u8;
         let green = ( ( 255 * ( ( color & mask.green ) >> green_shift ) ) / green_max ) as u8;
@@ -522,7 +567,7 @@ fn decode_32bpp<TBuilder: Builder>(
             red,
             green,
             blue,
-            255 );
+            alpha );
 
         x += 1;
         if x >= width {
@@ -532,7 +577,7 @@ fn decode_32bpp<TBuilder: Builder>(
 }
 
 fn decode_nothing<TBuilder: Builder>(
-    width: u32, row: u32, buf: &[u8], palette: &[Color], mask: &BitfieldMask, builder: &mut TBuilder ) {
+    _: u32, _: u32, _: &[u8], _: &[Color], _: &BitfieldMask, _: &mut TBuilder ) {
     // no-op
 }
 
@@ -583,7 +628,7 @@ pub fn decode<TBuilder: Builder>(
 
     let mask = match bpp {
         16 | 32 => header.bitmask.unwrap(),
-        _ => BitfieldMask { red: 0, green: 0, blue: 0 }
+        _ => BitfieldMask { red: 0, green: 0, blue: 0, alpha: 0 }
     };
 
     let decode_row = match bpp {
