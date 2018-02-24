@@ -432,25 +432,18 @@ impl Header {
         // TODO: Check if the size is sensible with the bitmap offset
 
         let palette = if palette_size > 0 {
-            match core.bpp {
-                1 | 4 | 8 => {
-                    let palette_size = palette_size as usize;
-                    let color_size = match version {
-                        Version::Microsoft2 => 3,
-                        _ => 4,
-                    } as usize;
+            let palette_size = palette_size as usize;
+            let color_size = match version {
+                Version::Microsoft2 => 3,
+                _ => 4,
+            } as usize;
 
-                    let mut buffer = vec![0; palette_size * color_size];
-                    input.read_exact( &mut buffer )?;
+            let mut buffer = vec![0; palette_size * color_size];
+            input.read_exact( &mut buffer )?;
 
-                    Some( Palette::from_buffer(
-                        &buffer, palette_size, color_size, false )? )
-                        // TODO: Last parameter indicated real alpha values in the bitmap.
-                        // I have yet to find one where this is anything else than 0.
-                },
-                _ => return Err( DecodingError::new_io(
-                    &format!( "Unexpected color palette of size {}.", palette_size ) ) ),
-            }
+            // TODO: Last parameter indicated real alpha values in the bitmap.
+            // I have yet to find one where this is anything else than 0.
+            Some( Palette::from_buffer( &buffer, palette_size, color_size, false )? )
         } else {
             None
         };
