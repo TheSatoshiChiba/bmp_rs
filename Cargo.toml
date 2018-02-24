@@ -1,14 +1,14 @@
 [package]
 name = "bmp_rs"
-version = "0.0.6"
+version = "0.0.9"
 authors = [ "Daniel Drywa <daniel@drywa.me>" ]
 description = "A bitmap file decoder for Microsoft bmp files"
 #documentation = ""
 homepage = "http://www.drywa.me"
 repository = "https://github.com/TheSatoshiChiba/bmp_rs"
 readme = "README.md"
-keywords = [ "bitmap", "bmp", "encoding", "decoding", "image" ]
-categories = [ "multimedia::encoding", "multimedia::images", "parsing", "encoding" ]
+keywords = [ "bitmap", "bmp", "decoding", "image" ]
+categories = [ "multimedia::images", "parsing" ]
 license = "Apache-2.0"
 include = [ "Cargo.toml", "src/**/*.rs", "README.md", "LICENSE" ]
 

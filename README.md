@@ -17,8 +17,8 @@ The following is a rough list of things that are already supported or will be in
 - [ ] Microsoft BMP Version 1 header
 - [x] Microsoft BMP Version 2 header
 - [x] Microsoft BMP Version 3 header
-- [ ] Microsoft BMP Version 4 header
-- [ ] Microsoft BMP Version 5 header
+- [x] Microsoft BMP Version 4 header
+- [x] Microsoft BMP Version 5 header
 - [x] IBM OS/2 1.x BMP header (32k x 32k limit)
 - [ ] IBM OS/2 2.x BMP header
 - [ ] OS/2 Bitmap Array type
@@ -26,6 +26,7 @@ The following is a rough list of things that are already supported or will be in
 - [ ] OS/2 Color Pointer type
 - [ ] OS/2 Struct Icon type
 - [ ] OS/2 Pointer type
+- [ ] Extended decoding that returns header data
 - [ ] Bitmap Encoding
 - [ ] Test suite
 - [ ] Documentation
