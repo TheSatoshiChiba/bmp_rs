@@ -296,12 +296,65 @@ impl BitfieldMask {
     }
 }
 
+struct BMPExtra {
+    color_space_type: u32,
+    red_x: i32,
+    red_y: i32,
+    red_z: i32,
+    green_x: i32,
+    green_y: i32,
+    green_z: i32,
+    blue_x: i32,
+    blue_y: i32,
+    blue_z: i32,
+    gamma_red: u32,
+    gamma_green: u32,
+    gamma_blue: u32,
+}
+
+impl BMPExtra {
+    fn from_buffer( buf: &[u8] ) -> Result<BMPExtra> {
+        let mut cursor = io::Cursor::new( buf );
+
+        let color_space_type = cursor.read_u32::<LittleEndian>()?;
+        let red_x = cursor.read_i32::<LittleEndian>()?;
+        let red_y = cursor.read_i32::<LittleEndian>()?;
+        let red_z = cursor.read_i32::<LittleEndian>()?;
+        let green_x = cursor.read_i32::<LittleEndian>()?;
+        let green_y = cursor.read_i32::<LittleEndian>()?;
+        let green_z = cursor.read_i32::<LittleEndian>()?;
+        let blue_x = cursor.read_i32::<LittleEndian>()?;
+        let blue_y = cursor.read_i32::<LittleEndian>()?;
+        let blue_z = cursor.read_i32::<LittleEndian>()?;
+        let gamma_red = cursor.read_u32::<LittleEndian>()?;
+        let gamma_green = cursor.read_u32::<LittleEndian>()?;
+        let gamma_blue = cursor.read_u32::<LittleEndian>()?;
+
+        Ok( BMPExtra {
+            color_space_type,
+            red_x,
+            red_y,
+            red_z,
+            green_x,
+            green_y,
+            green_z,
+            blue_x,
+            blue_y,
+            blue_z,
+            gamma_red,
+            gamma_green,
+            gamma_blue,
+        } )
+    }
+}
+
 struct Header {
     version: Version,
     core: Core,
     info: Option<Info>,
     palette: Option<Palette>,
     bitmask: Option<BitfieldMask>,
+    extra: Option<BMPExtra>,
 }
 
 impl Header {
@@ -315,57 +368,58 @@ impl Header {
         input.read_exact( &mut buffer )?;
 
         let core = Core::from_buffer( &buffer, version )?;
+
+        // Read Info header
         let info = match version {
-            Version::Microsoft3
+            Version::Microsoft3 |
+            Version::Microsoft4
                 => Some( Info::from_buffer( &buffer[12..], core.bpp )? ),
             _ => None,
         };
 
-        let has_alpha = match version {
-            Version::Microsoft4 => true,
-            _ => false,
+        // Read the Bitmask
+        let bitmask = match info {
+            Some( ref i ) => match i.compression {
+                Some( Compression::Bitfield ) => {
+                    if version == Version::Microsoft3 {
+                        // The bitmask needs to be read from the buffer
+                        let mut mask_buffer = vec![0; 12];
+                        input.read_exact( &mut mask_buffer )?;
+
+                        Some( BitfieldMask::from_buffer( &mask_buffer, false )? )
+                    } else {
+                        // The bitmask is part of the header buffer
+                        Some( BitfieldMask::from_buffer( &buffer[28..], true )? )
+                    }
+                },
+                _ if core.bpp == 16 => {
+                    // Default 16-bit mask
+                    Some( BitfieldMask {
+                        red: 0x7C00,
+                        green: 0x3E0,
+                        blue: 0x1F,
+                        alpha: 0x00,
+                    } )
+                },
+                _ if core.bpp == 32 => {
+                    // Default 32-bit mask
+                    Some( BitfieldMask {
+                        red: 0xFF0000,
+                        green: 0xFF00,
+                        blue: 0xFF,
+                        alpha: 0x00,
+                    } )
+                },
+                _ => None,
+            },
+            _ => None,
         };
 
-        // Read Bitmask
-        let bitmask = match info {
-            Some( ref i ) => {
-                match i.compression {
-                    Some( Compression::Bitfield ) => {
-                        let mut buffer = vec![0; 12];
-                        input.read_exact( &mut buffer )?;
-
-                        Some( BitfieldMask::from_buffer( &buffer, has_alpha )? )
-                    },
-                    _ if core.bpp == 16 => {
-                        let red = 0x7C00 as u32;
-                        let green = 0x3E0 as u32;
-                        let blue = 0x1F as u32;
-                        let alpha = 0x00 as u32;
-
-                        Some( BitfieldMask {
-                            red,
-                            green,
-                            blue,
-                            alpha,
-                        } )
-                    },
-                    _ if core.bpp == 32 => {
-                        let red = 0xFF0000 as u32;
-                        let green = 0xFF00 as u32;
-                        let blue = 0xFF as u32;
-                        let alpha = 0x00 as u32;
-
-                        Some( BitfieldMask {
-                            red,
-                            green,
-                            blue,
-                            alpha,
-                        } )
-                    },
-                    _ => None,
-                }
-            }
-            None => None,
+        // Read Extra header
+        let extra = match version {
+            Version::Microsoft4
+                => Some( BMPExtra::from_buffer( &buffer[44..] )? ),
+            _ => None,
         };
 
         // Read palette
@@ -390,7 +444,9 @@ impl Header {
                     input.read_exact( &mut buffer )?;
 
                     Some( Palette::from_buffer(
-                        &buffer, palette_size, color_size, has_alpha )? )
+                        &buffer, palette_size, color_size, false )? )
+                        // TODO: Last parameter indicated real alpha values in the bitmap.
+                        // I have yet to find one where this is anything else than 0.
                 },
                 _ => return Err( DecodingError::new_io(
                     &format!( "Unexpected color palette of size {}.", palette_size ) ) ),
@@ -405,6 +461,7 @@ impl Header {
             info,
             palette,
             bitmask,
+            extra,
         } )
     }
 }
@@ -468,44 +525,38 @@ fn decode_8bpp<TBuilder: Builder>(
     }
 }
 
+fn clamp8bit( value: u32, mask: u32, shr_count: u32, mask_max: u32, default: u8 ) -> u8 {
+    match mask_max {
+        0 => default,
+        max @ _ => ( ( 255 * ( ( value & mask ) >> shr_count ) ) / max ) as u8,
+    }
+}
+
 fn decode_16bpp<TBuilder: Builder>(
     width: u32, row: u32, buf: &[u8], palette: &[Color], mask: &BitfieldMask, builder: &mut TBuilder ) {
 
     let mut x: u32 = 0;
 
-    let alpha_shift = mask.red.trailing_zeros();
+    let alpha_shift = mask.alpha.trailing_zeros();
     let red_shift = mask.red.trailing_zeros();
     let green_shift = mask.green.trailing_zeros();
     let blue_shift = mask.blue.trailing_zeros();
 
-    let alpha_max = match mask.alpha {
-        0 => 0,
-        alpha @ _ => alpha >> alpha_shift,
-    };
-
-    let red_max = mask.red >> red_shift;
-    let green_max = mask.green >> green_shift;
-    let blue_max = mask.blue >> blue_shift;
+    let alpha_max = mask.alpha.checked_shr( alpha_shift ).unwrap_or( 0 );
+    let red_max = mask.red.checked_shr( red_shift ).unwrap_or( 0 );
+    let green_max = mask.green.checked_shr( green_shift ).unwrap_or( 0 );
+    let blue_max = mask.blue.checked_shr( blue_shift ).unwrap_or( 0 );
 
     for mut bytes in buf.chunks( 2 ) {
         let color = bytes.read_u16::<LittleEndian>().unwrap() as u32;
 
-        let alpha = match alpha_max {
-            0 => 255,
-            _ => ( ( 255 * ( ( color & mask.alpha ) >> alpha_shift ) ) / alpha_max ) as u8,
-        };
-
-        let red = ( ( 255 * ( ( color & mask.red ) >> red_shift ) ) / red_max ) as u8;
-        let green = ( ( 255 * ( ( color & mask.green ) >> green_shift ) ) / green_max ) as u8;
-        let blue = ( ( 255 * ( ( color & mask.blue ) >> blue_shift ) ) / blue_max ) as u8;
-
         builder.set_pixel(
             x,
             row,
-            red,
-            green,
-            blue,
-            alpha );
+            clamp8bit( color, mask.red, red_shift, red_max, 0 ),
+            clamp8bit( color, mask.green, green_shift, green_max, 0 ),
+            clamp8bit( color, mask.blue, blue_shift, blue_max, 0 ),
+            clamp8bit( color, mask.alpha, alpha_shift, alpha_max, 255 ) );
 
         x += 1;
         if x >= width {
@@ -534,40 +585,26 @@ fn decode_32bpp<TBuilder: Builder>(
 
     let mut x: u32 = 0;
 
-    let alpha_shift = mask.alpha.trailing_zeros();
-
+    let alpha_shift = mask.red.trailing_zeros();
     let red_shift = mask.red.trailing_zeros();
     let green_shift = mask.green.trailing_zeros();
     let blue_shift = mask.blue.trailing_zeros();
 
-    let alpha_max = match mask.alpha {
-        0 => 0,
-        alpha @ _ => alpha >> alpha_shift,
-    };
-
-    let red_max = mask.red >> red_shift;
-    let green_max = mask.green >> green_shift;
-    let blue_max = mask.blue >> blue_shift;
+    let alpha_max = mask.alpha.checked_shr( alpha_shift ).unwrap_or( 0 );
+    let red_max = mask.red.checked_shr( red_shift ).unwrap_or( 0 );
+    let green_max = mask.green.checked_shr( green_shift ).unwrap_or( 0 );
+    let blue_max = mask.blue.checked_shr( blue_shift ).unwrap_or( 0 );
 
     for mut bytes in buf.chunks( 4 ) {
         let color = bytes.read_u32::<LittleEndian>().unwrap() as u32;
 
-        let alpha = match alpha_max {
-            0 => 255,
-            _ => ( ( 255 * ( ( color & mask.alpha ) >> alpha_shift ) ) / alpha_max ) as u8,
-        };
-
-        let red = ( ( 255 * ( ( color & mask.red ) >> red_shift ) ) / red_max ) as u8;
-        let green = ( ( 255 * ( ( color & mask.green ) >> green_shift ) ) / green_max ) as u8;
-        let blue = ( ( 255 * ( ( color & mask.blue ) >> blue_shift ) ) / blue_max ) as u8;
-
         builder.set_pixel(
             x,
             row,
-            red,
-            green,
-            blue,
-            alpha );
+            clamp8bit( color, mask.red, red_shift, red_max, 0 ),
+            clamp8bit( color, mask.green, green_shift, green_max, 0 ),
+            clamp8bit( color, mask.blue, blue_shift, blue_max, 0 ),
+            clamp8bit( color, mask.alpha, alpha_shift, alpha_max, 255 ) );
 
         x += 1;
         if x >= width {
@@ -865,21 +902,7 @@ pub fn decode<TBuilder: Builder>(
 
 
 
-struct BMPExtra {
-    color_space_type: u32,
-    red_x: i32,
-    red_y: i32,
-    red_z: i32,
-    green_x: i32,
-    green_y: i32,
-    green_z: i32,
-    blue_x: i32,
-    blue_y: i32,
-    blue_z: i32,
-    gamma_red: u32,
-    gamma_green: u32,
-    gamma_blue: u32,
-}
+
 
 struct BMPProfile {
     intent: u32,
