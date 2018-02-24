@@ -133,7 +133,7 @@ impl Version { // TODO: Replace with TryFrom when available.
             MSVERSION2_SIZE => Ok( Version::Microsoft2 ),
             MSVERSION3_SIZE => Ok( Version::Microsoft3 ),
             MSVERSION4_SIZE => Ok( Version::Microsoft4 ),
-            // MSVERSION5_SIZE => Ok( Version::Microsoft5 ),
+            MSVERSION5_SIZE => Ok( Version::Microsoft5 ),
             _ => Err( DecodingError::new_io(
                     &format!( "Invalid bitmap header {},", size ) ) ),
         }
@@ -348,6 +348,31 @@ impl BMPExtra {
     }
 }
 
+struct BMPProfile {
+    intent: u32,
+    data: u32,
+    size: u32,
+    reserved: u32,
+}
+
+impl BMPProfile {
+    fn from_buffer( buf: &[u8] ) -> Result<BMPProfile> {
+        let mut cursor = io::Cursor::new( buf );
+
+        let intent = cursor.read_u32::<LittleEndian>()?;
+        let data = cursor.read_u32::<LittleEndian>()?;
+        let size = cursor.read_u32::<LittleEndian>()?;
+        let reserved = cursor.read_u32::<LittleEndian>()?;
+
+        Ok( BMPProfile {
+            intent,
+            data,
+            size,
+            reserved,
+        } )
+    }
+}
+
 struct Header {
     version: Version,
     core: Core,
@@ -355,6 +380,7 @@ struct Header {
     palette: Option<Palette>,
     bitmask: Option<BitfieldMask>,
     extra: Option<BMPExtra>,
+    profile: Option<BMPProfile>,
 }
 
 impl Header {
@@ -371,10 +397,8 @@ impl Header {
 
         // Read Info header
         let info = match version {
-            Version::Microsoft3 |
-            Version::Microsoft4
-                => Some( Info::from_buffer( &buffer[12..], core.bpp )? ),
-            _ => None,
+            Version::Microsoft2 => None,
+            _ => Some( Info::from_buffer( &buffer[12..], core.bpp )? ),
         };
 
         // Read the Bitmask
@@ -389,7 +413,7 @@ impl Header {
                         Some( BitfieldMask::from_buffer( &mask_buffer, false )? )
                     } else {
                         // The bitmask is part of the header buffer
-                        Some( BitfieldMask::from_buffer( &buffer[28..], true )? )
+                        Some( BitfieldMask::from_buffer( &buffer[36..], true )? ) // 36
                     }
                 },
                 _ if core.bpp == 16 => {
@@ -418,7 +442,15 @@ impl Header {
         // Read Extra header
         let extra = match version {
             Version::Microsoft4
-                => Some( BMPExtra::from_buffer( &buffer[44..] )? ),
+            | Version::Microsoft5
+                => Some( BMPExtra::from_buffer( &buffer[52..] )? ), // 52
+            _ => None,
+        };
+
+        // Read profile header
+        let profile = match version {
+            Version::Microsoft5
+                => Some( BMPProfile::from_buffer( &buffer[104..] )? ),
             _ => None,
         };
 
@@ -455,6 +487,7 @@ impl Header {
             palette,
             bitmask,
             extra,
+            profile,
         } )
     }
 }
@@ -877,31 +910,6 @@ pub fn decode<TBuilder: Builder>(
     }
 
     builder.build()
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-struct BMPProfile {
-    intent: u32,
-    data: u32,
-    size: u32,
-    reserved: u32,
 }
 
 #[cfg( test )]
