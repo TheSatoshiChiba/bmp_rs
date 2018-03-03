@@ -45,57 +45,21 @@
 //!
 extern crate byteorder;
 
-use std::io;
-use std::error;
-use std::fmt;
+use std::io::{
+    Error,
+    Result,
+    Cursor,
+    ErrorKind,
+    Read,
+};
 
 use byteorder::{
     ReadBytesExt,
     LittleEndian,
-    BigEndian,
 };
 
-#[derive( Debug )]
-pub enum DecodingError {
-    IOError( io::Error ),
-}
-
-pub type Result<TResult> = std::result::Result<TResult, DecodingError>;
-
-impl DecodingError {
-    fn new_io( message : &str ) -> DecodingError {
-        DecodingError::IOError(
-            io::Error::new( io::ErrorKind::InvalidData, message ) )
-    }
-}
-
-impl fmt::Display for DecodingError {
-    fn fmt( &self, formatter: &mut fmt::Formatter ) -> fmt::Result {
-        match *self {
-            DecodingError::IOError( ref error )
-                => write!( formatter, "IO error: {}", *error ),
-        }
-    }
-}
-
-impl error::Error for DecodingError {
-    fn description( &self ) -> &str {
-        match *self {
-            DecodingError::IOError( ref error ) => error.description(),
-        }
-    }
-
-    fn cause( &self ) -> Option<&error::Error> {
-        match *self {
-            DecodingError::IOError( ref error ) => Some( error ),
-        }
-    }
-}
-
-impl From<io::Error> for DecodingError {
-    fn from( error: io::Error ) -> Self {
-        DecodingError::IOError( error )
-    }
+fn invalid_data_error( message : &str ) -> Error {
+    Error::new( ErrorKind::InvalidData, message )
 }
 
 #[derive( Clone, Copy )]
@@ -134,7 +98,7 @@ impl Version { // TODO: Replace with TryFrom when available.
             MSVERSION3_SIZE => Ok( Version::Microsoft3 ),
             MSVERSION4_SIZE => Ok( Version::Microsoft4 ),
             MSVERSION5_SIZE => Ok( Version::Microsoft5 ),
-            _ => Err( DecodingError::new_io(
+            _ => Err( invalid_data_error(
                     &format!( "Invalid bitmap header {},", size ) ) ),
         }
     }
@@ -150,7 +114,7 @@ struct Core {
 
 impl Core {
     fn from_buffer( buf: &[u8], version: Version ) -> Result<Core> {
-        let mut cursor = io::Cursor::new( buf );
+        let mut cursor = Cursor::new( buf );
 
         let ( width, height ) =
             match version {
@@ -170,13 +134,13 @@ impl Core {
 
         let bottom_up = if height.signum() == 1 { true } else { false };
         let width = width.checked_abs()
-            .ok_or( DecodingError::new_io( "Invalid width." ) )? as u32;
+            .ok_or( invalid_data_error( "Invalid width." ) )? as u32;
         let height = height.checked_abs()
-            .ok_or( DecodingError::new_io( "Invalid height." ) )? as u32;
+            .ok_or( invalid_data_error( "Invalid height." ) )? as u32;
 
         let planes = cursor.read_u16::<LittleEndian>()?;
         if planes != 1 {
-            return Err( DecodingError::new_io(
+            return Err( invalid_data_error(
                 &format!( "Invalid number of color planes {}.", planes ) ) );
         }
 
@@ -186,11 +150,11 @@ impl Core {
                 if version == Version::Microsoft2
                     && ( bpp == 16 || bpp == 32 ) {
 
-                    return Err( DecodingError::new_io(
+                    return Err( invalid_data_error(
                         &format!( "Invalid bits per pixel {}.", bpp ) ) );
                 }
             },
-            _ => return Err( DecodingError::new_io(
+            _ => return Err( invalid_data_error(
                 &format!( "Invalid bits per pixel {}.", bpp ) ) ),
         }
 
@@ -245,14 +209,14 @@ struct Info {
 
 impl Info {
     fn from_buffer( buf: &[u8], bpp: u32 ) -> Result<Info> {
-        let mut cursor = io::Cursor::new( buf );
+        let mut cursor = Cursor::new( buf );
 
         let compression = match cursor.read_u32::<LittleEndian>()? {
             0 => None,
             1 if bpp == 8 => Some( Compression::RLE8Bit ),
             2 if bpp == 4 => Some( Compression::RLE4Bit ),
             3 if bpp == 16 || bpp == 32 => Some( Compression::Bitfield ),
-            v @ _ => return Err( DecodingError::new_io(
+            v @ _ => return Err( invalid_data_error(
                 &format!( "Invalid compression {} for {}-bit", v, bpp ) ) ),
         };
 
@@ -282,7 +246,7 @@ struct BitfieldMask {
 
 impl BitfieldMask {
     fn from_buffer( buf: &[u8], has_alpha: bool ) -> Result<BitfieldMask> {
-        let mut cursor = io::Cursor::new( buf );
+        let mut cursor = Cursor::new( buf );
 
         let red = cursor.read_u32::<LittleEndian>()?;
         let green = cursor.read_u32::<LittleEndian>()?;
@@ -314,7 +278,7 @@ struct BMPExtra {
 
 impl BMPExtra {
     fn from_buffer( buf: &[u8] ) -> Result<BMPExtra> {
-        let mut cursor = io::Cursor::new( buf );
+        let mut cursor = Cursor::new( buf );
 
         let color_space_type = cursor.read_u32::<LittleEndian>()?;
         let red_x = cursor.read_i32::<LittleEndian>()?;
@@ -357,7 +321,7 @@ struct BMPProfile {
 
 impl BMPProfile {
     fn from_buffer( buf: &[u8] ) -> Result<BMPProfile> {
-        let mut cursor = io::Cursor::new( buf );
+        let mut cursor = Cursor::new( buf );
 
         let intent = cursor.read_u32::<LittleEndian>()?;
         let data = cursor.read_u32::<LittleEndian>()?;
@@ -384,7 +348,7 @@ struct Header {
 }
 
 impl Header {
-    fn from_reader( input: &mut io::Read ) -> Result<Header> {
+    fn from_reader( input: &mut Read ) -> Result<Header> {
         let version = Version::from_isize(
             input.read_u32::<LittleEndian>()? as isize )?;
 
@@ -645,15 +609,15 @@ fn decode_nothing<TBuilder: Builder>(
 }
 
 pub fn decode<TBuilder: Builder>(
-    input: &mut io::Read, mut builder: TBuilder ) -> Result<TBuilder::TResult> {
+    input: &mut Read, mut builder: TBuilder ) -> Result<TBuilder::TResult> {
 
     // Read file header
     let mut header: [u8; 14] = [0; 14];
     input.read_exact( &mut header )?;
 
-    let mut cursor = io::Cursor::new( header );
+    let mut cursor = Cursor::new( header );
     if header[0] != 0x42 && header[1] != 0x4D {
-        return Err( DecodingError::new_io( "Invalid bitmap file." ) );
+        return Err( invalid_data_error( "Invalid bitmap file." ) );
     }
 
     // TODO: Make sensible decisions about ridiculous big files
