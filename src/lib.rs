@@ -37,8 +37,10 @@
 //! }
 //!
 //! fn main() {
-//!     let mut file = File::open( "image.bmp" ).unwrap();
-//!     let image = bmp_rs::decode( &mut file, ImageBuilder { } );
+//!     let builder = ImageBuilder { }; // Create a builder instance
+//!     let mut file = File::open( "image.bmp" ).unwrap(); // Open a file stream
+//!     let builder = bmp_rs::decode( &mut file, builder ); // decode file
+//!     let image = builder.build(); // build the final image
 //!     // Do something with your image
 //! }
 //! ```
@@ -58,6 +60,18 @@ use byteorder::{
     LittleEndian,
 };
 
+mod bitmap;
+
+pub trait Builder {
+    type TResult;
+
+    fn set_size( &mut self, width: u32, height: u32 );
+    fn set_pixel( &mut self, x: u32, y: u32, r: u8, g: u8, b: u8, a: u8 );
+    fn build( &self ) -> Result<Self::TResult>;
+}
+
+
+
 fn invalid_data_error( message : &str ) -> Error {
     Error::new( ErrorKind::InvalidData, message )
 }
@@ -70,13 +84,7 @@ struct Color {
     a: u8,
 }
 
-pub trait Builder {
-    type TResult;
 
-    fn set_size( &mut self, width: u32, height: u32 );
-    fn set_pixel( &mut self, x: u32, y: u32, r: u8, g: u8, b: u8, a: u8 );
-    fn build( &mut self ) -> Result<Self::TResult>;
-}
 
 const MSVERSION2_SIZE: isize = 12;
 const MSVERSION3_SIZE: isize = 40;
@@ -609,7 +617,7 @@ fn decode_nothing<TBuilder: Builder>(
 }
 
 pub fn decode<TBuilder: Builder>(
-    input: &mut Read, mut builder: TBuilder ) -> Result<TBuilder::TResult> {
+    input: &mut Read, mut builder: TBuilder ) -> Result<TBuilder> {
 
     // Read file header
     let mut header: [u8; 14] = [0; 14];
@@ -873,5 +881,5 @@ pub fn decode<TBuilder: Builder>(
         }
     }
 
-    builder.build()
+    Ok( builder )
 }
