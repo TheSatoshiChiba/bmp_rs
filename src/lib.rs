@@ -58,16 +58,21 @@ use std::io::{
 use byteorder::{
     ReadBytesExt,
     LittleEndian,
+    BigEndian,
 };
 
 mod bitmap;
+
+use bitmap::{
+    FileType,
+};
 
 pub trait Builder {
     type TResult;
 
     fn set_size( &mut self, width: u32, height: u32 );
     fn set_pixel( &mut self, x: u32, y: u32, r: u8, g: u8, b: u8, a: u8 );
-    fn build( &self ) -> Result<Self::TResult>;
+    fn build( &mut self ) -> Result<Self::TResult>;
 }
 
 
@@ -624,9 +629,11 @@ pub fn decode<TBuilder: Builder>(
     input.read_exact( &mut header )?;
 
     let mut cursor = Cursor::new( header );
-    if header[0] != 0x42 && header[1] != 0x4D {
-        return Err( invalid_data_error( "Invalid bitmap file." ) );
-    }
+
+    FileType::from_u16( cursor.read_u16::<LittleEndian>()? )?;
+    // if header[0] != 0x42 && header[1] != 0x4D {
+    //     return Err( invalid_data_error( "Invalid bitmap file." ) );
+    // }
 
     // TODO: Make sensible decisions about ridiculous big files
 
