@@ -48,23 +48,21 @@
 extern crate byteorder;
 
 use std::io::{
-    Error,
     Result,
     Cursor,
-    ErrorKind,
     Read,
 };
 
 use byteorder::{
     ReadBytesExt,
     LittleEndian,
-    BigEndian,
 };
 
 mod bitmap;
 
 use bitmap::{
-    FileType,
+    create_error,
+    FileHeader,
 };
 
 pub trait Builder {
@@ -73,12 +71,6 @@ pub trait Builder {
     fn set_size( &mut self, width: u32, height: u32 );
     fn set_pixel( &mut self, x: u32, y: u32, r: u8, g: u8, b: u8, a: u8 );
     fn build( &mut self ) -> Result<Self::TResult>;
-}
-
-
-
-fn invalid_data_error( message : &str ) -> Error {
-    Error::new( ErrorKind::InvalidData, message )
 }
 
 #[derive( Clone, Copy )]
@@ -111,8 +103,8 @@ impl Version { // TODO: Replace with TryFrom when available.
             MSVERSION3_SIZE => Ok( Version::Microsoft3 ),
             MSVERSION4_SIZE => Ok( Version::Microsoft4 ),
             MSVERSION5_SIZE => Ok( Version::Microsoft5 ),
-            _ => Err( invalid_data_error(
-                    &format!( "Invalid bitmap header {},", size ) ) ),
+            _ => Err( create_error(
+                    format!( "Invalid bitmap header {},", size ) ) ),
         }
     }
 }
@@ -147,14 +139,14 @@ impl Core {
 
         let bottom_up = if height.signum() == 1 { true } else { false };
         let width = width.checked_abs()
-            .ok_or( invalid_data_error( "Invalid width." ) )? as u32;
+            .ok_or( create_error( "Invalid width." ) )? as u32;
         let height = height.checked_abs()
-            .ok_or( invalid_data_error( "Invalid height." ) )? as u32;
+            .ok_or( create_error( "Invalid height." ) )? as u32;
 
         let planes = cursor.read_u16::<LittleEndian>()?;
         if planes != 1 {
-            return Err( invalid_data_error(
-                &format!( "Invalid number of color planes {}.", planes ) ) );
+            return Err( create_error(
+                format!( "Invalid number of color planes {}.", planes ) ) );
         }
 
         let bpp = cursor.read_u16::<LittleEndian>()? as u32;
@@ -163,12 +155,12 @@ impl Core {
                 if version == Version::Microsoft2
                     && ( bpp == 16 || bpp == 32 ) {
 
-                    return Err( invalid_data_error(
-                        &format!( "Invalid bits per pixel {}.", bpp ) ) );
+                    return Err( create_error(
+                        format!( "Invalid bits per pixel {}.", bpp ) ) );
                 }
             },
-            _ => return Err( invalid_data_error(
-                &format!( "Invalid bits per pixel {}.", bpp ) ) ),
+            _ => return Err( create_error(
+                format!( "Invalid bits per pixel {}.", bpp ) ) ),
         }
 
         Ok( Core { width, height, bpp, planes, bottom_up } )
@@ -229,8 +221,8 @@ impl Info {
             1 if bpp == 8 => Some( Compression::RLE8Bit ),
             2 if bpp == 4 => Some( Compression::RLE4Bit ),
             3 if bpp == 16 || bpp == 32 => Some( Compression::Bitfield ),
-            v @ _ => return Err( invalid_data_error(
-                &format!( "Invalid compression {} for {}-bit", v, bpp ) ) ),
+            v @ _ => return Err( create_error(
+                format!( "Invalid compression {} for {}-bit", v, bpp ) ) ),
         };
 
         let image_size = cursor.read_u32::<LittleEndian>()?;
@@ -625,22 +617,23 @@ pub fn decode<TBuilder: Builder>(
     input: &mut Read, mut builder: TBuilder ) -> Result<TBuilder> {
 
     // Read file header
-    let mut header: [u8; 14] = [0; 14];
-    input.read_exact( &mut header )?;
+    let file_header = FileHeader::from_reader( input )?;
+    // let mut header: [u8; 14] = [0; 14];
+    // input.read_exact( &mut header )?;
 
-    let mut cursor = Cursor::new( header );
+    // let mut cursor = Cursor::new( header );
 
-    FileType::from_u16( cursor.read_u16::<LittleEndian>()? )?;
-    // if header[0] != 0x42 && header[1] != 0x4D {
-    //     return Err( invalid_data_error( "Invalid bitmap file." ) );
-    // }
+    // FileType::from_u16( cursor.read_u16::<LittleEndian>()? )?;
+    // // if header[0] != 0x42 && header[1] != 0x4D {
+    // //     return Err( create_error( "Invalid bitmap file." ) );
+    // // }
 
-    // TODO: Make sensible decisions about ridiculous big files
+    // // TODO: Make sensible decisions about ridiculous big files
 
-    cursor.set_position( 10 );
-    let _ = cursor.read_u32::<LittleEndian>()?; // Offset
+    // cursor.set_position( 10 );
+    // let _ = cursor.read_u32::<LittleEndian>()?; // Offset
 
-    // TODO: Make sensible decisions about the offset to the pixel data
+    // // TODO: Make sensible decisions about the offset to the pixel data
 
     // Read bitmap header
     let header = Header::from_reader( input )?;

@@ -1,11 +1,20 @@
+extern crate byteorder;
+
+use std::io;
 use std::io::{
     Result,
-    Error,
-    ErrorKind,
+    Read,
 };
 
-fn create_error( message: &str ) -> Error {
-    Error::new( ErrorKind::InvalidData, message )
+use byteorder::{
+    ReadBytesExt,
+    LittleEndian,
+};
+
+pub fn create_error<S>( message: S ) -> io::Error
+    where S: Into<String> {
+
+    io::Error::new( io::ErrorKind::InvalidData, message.into() )
 }
 
 pub enum FileType {
@@ -28,7 +37,30 @@ impl FileType {
             // 0x5043 => Ok( FileType::CP ),
             // 0x4349 => Ok( FileType::IC ),
             // 0x5450 => Ok( FileType::PT ),
-            x @ _ => Err( create_error( &format!( "Invalid file type {:X}", x ) ) ),
+            x @ _ => Err( create_error( format!( "Invalid file type 0x{:X}", x ) ) ),
         }
+    }
+}
+
+pub struct FileHeader {
+    file_type: FileType,
+    file_size: u32,
+    data_offset: u32,
+}
+
+impl FileHeader {
+    pub fn from_reader( input: &mut Read ) -> Result<FileHeader> {
+        let file_type = FileType::from_u16( input.read_u16::<LittleEndian>()? )?;
+        let file_size = input.read_u32::<LittleEndian>()?;
+
+        input.read_u32::<LittleEndian>()?; // Reserved
+
+        let data_offset = input.read_u32::<LittleEndian>()?;
+
+        Ok( FileHeader {
+            file_type,
+            file_size,
+            data_offset,
+        } )
     }
 }
