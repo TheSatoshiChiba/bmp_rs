@@ -49,7 +49,6 @@ extern crate byteorder;
 
 use std::io::{
     Result,
-    Cursor,
     Read,
 };
 
@@ -63,6 +62,8 @@ mod bitmap;
 use bitmap::{
     create_error,
     FileHeader,
+    Version,
+    BitmapHeader,
 };
 
 pub trait Builder {
@@ -79,92 +80,6 @@ struct Color {
     g: u8,
     b: u8,
     a: u8,
-}
-
-
-
-const MSVERSION2_SIZE: isize = 12;
-const MSVERSION3_SIZE: isize = 40;
-const MSVERSION4_SIZE: isize = 108;
-const MSVERSION5_SIZE: isize = 124;
-
-#[derive( PartialEq, Eq, Clone, Copy )]
-enum Version {
-    Microsoft2 = MSVERSION2_SIZE,
-    Microsoft3 = MSVERSION3_SIZE,
-    Microsoft4 = MSVERSION4_SIZE,
-    Microsoft5 = MSVERSION5_SIZE,
-}
-
-impl Version { // TODO: Replace with TryFrom when available.
-    fn from_isize( size: isize ) -> Result<Version> {
-        match size {
-            MSVERSION2_SIZE => Ok( Version::Microsoft2 ),
-            MSVERSION3_SIZE => Ok( Version::Microsoft3 ),
-            MSVERSION4_SIZE => Ok( Version::Microsoft4 ),
-            MSVERSION5_SIZE => Ok( Version::Microsoft5 ),
-            _ => Err( create_error(
-                    format!( "Invalid bitmap header {},", size ) ) ),
-        }
-    }
-}
-
-struct Core {
-    width: u32,
-    height: u32,
-    bpp: u32,
-    planes: u16,
-    bottom_up: bool,
-}
-
-impl Core {
-    fn from_buffer( buf: &[u8], version: Version ) -> Result<Core> {
-        let mut cursor = Cursor::new( buf );
-
-        let ( width, height ) =
-            match version {
-                Version::Microsoft2 => {
-                    let mut dimension: [i16; 2] = [0; 2];
-                    cursor.read_i16_into::<LittleEndian>( &mut dimension )?;
-
-                    ( dimension[0] as i32, dimension[1] as i32 )
-                },
-                _ => {
-                    let mut dimension: [i32; 2] = [0; 2];
-                    cursor.read_i32_into::<LittleEndian>( &mut dimension )?;
-
-                    ( dimension[0], dimension[1] )
-                },
-            };
-
-        let bottom_up = if height.signum() == 1 { true } else { false };
-        let width = width.checked_abs()
-            .ok_or( create_error( "Invalid width." ) )? as u32;
-        let height = height.checked_abs()
-            .ok_or( create_error( "Invalid height." ) )? as u32;
-
-        let planes = cursor.read_u16::<LittleEndian>()?;
-        if planes != 1 {
-            return Err( create_error(
-                format!( "Invalid number of color planes {}.", planes ) ) );
-        }
-
-        let bpp = cursor.read_u16::<LittleEndian>()? as u32;
-        match bpp {
-            1 | 4 | 8 | 16 | 24 | 32 => {
-                if version == Version::Microsoft2
-                    && ( bpp == 16 || bpp == 32 ) {
-
-                    return Err( create_error(
-                        format!( "Invalid bits per pixel {}.", bpp ) ) );
-                }
-            },
-            _ => return Err( create_error(
-                format!( "Invalid bits per pixel {}.", bpp ) ) ),
-        }
-
-        Ok( Core { width, height, bpp, planes, bottom_up } )
-    }
 }
 
 struct Palette {
@@ -213,10 +128,8 @@ struct Info {
 }
 
 impl Info {
-    fn from_buffer( buf: &[u8], bpp: u32 ) -> Result<Info> {
-        let mut cursor = Cursor::new( buf );
-
-        let compression = match cursor.read_u32::<LittleEndian>()? {
+    fn from_reader( input: &mut Read, bpp: u32 ) -> Result<Info> {
+        let compression = match input.read_u32::<LittleEndian>()? {
             0 => None,
             1 if bpp == 8 => Some( Compression::RLE8Bit ),
             2 if bpp == 4 => Some( Compression::RLE4Bit ),
@@ -225,11 +138,11 @@ impl Info {
                 format!( "Invalid compression {} for {}-bit", v, bpp ) ) ),
         };
 
-        let image_size = cursor.read_u32::<LittleEndian>()?;
-        let ppm_x = cursor.read_i32::<LittleEndian>()?;
-        let ppm_y = cursor.read_i32::<LittleEndian>()?;
-        let used_colors = cursor.read_u32::<LittleEndian>()?;
-        let important_colors = cursor.read_u32::<LittleEndian>()?;
+        let image_size = input.read_u32::<LittleEndian>()?;
+        let ppm_x = input.read_i32::<LittleEndian>()?;
+        let ppm_y = input.read_i32::<LittleEndian>()?;
+        let used_colors = input.read_u32::<LittleEndian>()?;
+        let important_colors = input.read_u32::<LittleEndian>()?;
 
         Ok ( Info {
             compression,
@@ -250,14 +163,12 @@ struct BitfieldMask {
 }
 
 impl BitfieldMask {
-    fn from_buffer( buf: &[u8], has_alpha: bool ) -> Result<BitfieldMask> {
-        let mut cursor = Cursor::new( buf );
-
-        let red = cursor.read_u32::<LittleEndian>()?;
-        let green = cursor.read_u32::<LittleEndian>()?;
-        let blue = cursor.read_u32::<LittleEndian>()?;
+    fn from_reader( input: &mut Read, has_alpha: bool ) -> Result<BitfieldMask> {
+        let red = input.read_u32::<LittleEndian>()?;
+        let green = input.read_u32::<LittleEndian>()?;
+        let blue = input.read_u32::<LittleEndian>()?;
         let alpha = match has_alpha {
-            true => cursor.read_u32::<LittleEndian>()?,
+            true => input.read_u32::<LittleEndian>()?,
             false => 0,
         };
 
@@ -282,22 +193,20 @@ struct BMPExtra {
 }
 
 impl BMPExtra {
-    fn from_buffer( buf: &[u8] ) -> Result<BMPExtra> {
-        let mut cursor = Cursor::new( buf );
-
-        let color_space_type = cursor.read_u32::<LittleEndian>()?;
-        let red_x = cursor.read_i32::<LittleEndian>()?;
-        let red_y = cursor.read_i32::<LittleEndian>()?;
-        let red_z = cursor.read_i32::<LittleEndian>()?;
-        let green_x = cursor.read_i32::<LittleEndian>()?;
-        let green_y = cursor.read_i32::<LittleEndian>()?;
-        let green_z = cursor.read_i32::<LittleEndian>()?;
-        let blue_x = cursor.read_i32::<LittleEndian>()?;
-        let blue_y = cursor.read_i32::<LittleEndian>()?;
-        let blue_z = cursor.read_i32::<LittleEndian>()?;
-        let gamma_red = cursor.read_u32::<LittleEndian>()?;
-        let gamma_green = cursor.read_u32::<LittleEndian>()?;
-        let gamma_blue = cursor.read_u32::<LittleEndian>()?;
+    fn from_reader( input: &mut Read ) -> Result<BMPExtra> {
+        let color_space_type = input.read_u32::<LittleEndian>()?;
+        let red_x = input.read_i32::<LittleEndian>()?;
+        let red_y = input.read_i32::<LittleEndian>()?;
+        let red_z = input.read_i32::<LittleEndian>()?;
+        let green_x = input.read_i32::<LittleEndian>()?;
+        let green_y = input.read_i32::<LittleEndian>()?;
+        let green_z = input.read_i32::<LittleEndian>()?;
+        let blue_x = input.read_i32::<LittleEndian>()?;
+        let blue_y = input.read_i32::<LittleEndian>()?;
+        let blue_z = input.read_i32::<LittleEndian>()?;
+        let gamma_red = input.read_u32::<LittleEndian>()?;
+        let gamma_green = input.read_u32::<LittleEndian>()?;
+        let gamma_blue = input.read_u32::<LittleEndian>()?;
 
         Ok( BMPExtra {
             color_space_type,
@@ -325,13 +234,11 @@ struct BMPProfile {
 }
 
 impl BMPProfile {
-    fn from_buffer( buf: &[u8] ) -> Result<BMPProfile> {
-        let mut cursor = Cursor::new( buf );
-
-        let intent = cursor.read_u32::<LittleEndian>()?;
-        let data = cursor.read_u32::<LittleEndian>()?;
-        let size = cursor.read_u32::<LittleEndian>()?;
-        let reserved = cursor.read_u32::<LittleEndian>()?;
+    fn from_reader( input: &mut Read ) -> Result<BMPProfile> {
+        let intent = input.read_u32::<LittleEndian>()?;
+        let data = input.read_u32::<LittleEndian>()?;
+        let size = input.read_u32::<LittleEndian>()?;
+        let reserved = input.read_u32::<LittleEndian>()?;
 
         Ok( BMPProfile {
             intent,
@@ -343,8 +250,7 @@ impl BMPProfile {
 }
 
 struct Header {
-    version: Version,
-    core: Core,
+    core: BitmapHeader,
     info: Option<Info>,
     palette: Option<Palette>,
     bitmask: Option<BitfieldMask>,
@@ -354,35 +260,25 @@ struct Header {
 
 impl Header {
     fn from_reader( input: &mut Read ) -> Result<Header> {
-        let version = Version::from_isize(
-            input.read_u32::<LittleEndian>()? as isize )?;
-
         // Read core header
-        let mut buffer = vec![0; ( version as usize ) - 4];
-
-        input.read_exact( &mut buffer )?;
-
-        let core = Core::from_buffer( &buffer, version )?;
+        let core = BitmapHeader::from_reader( input )?;
 
         // Read Info header
-        let info = match version {
-            Version::Microsoft2 => None,
-            _ => Some( Info::from_buffer( &buffer[12..], core.bpp )? ),
+        let info = match core.version {
+            Version::MICROSOFT2 => None,
+            _ => Some( Info::from_reader( input, core.bpp )? ),
         };
 
         // Read the Bitmask
         let bitmask = match info {
             Some( ref i ) => match i.compression {
                 Some( Compression::Bitfield ) => {
-                    if version == Version::Microsoft3 {
+                    if core.version == Version::MICROSOFT3 {
                         // The bitmask needs to be read from the buffer
-                        let mut mask_buffer = vec![0; 12];
-                        input.read_exact( &mut mask_buffer )?;
-
-                        Some( BitfieldMask::from_buffer( &mask_buffer, false )? )
+                        Some( BitfieldMask::from_reader( input, false )? )
                     } else {
                         // The bitmask is part of the header buffer
-                        Some( BitfieldMask::from_buffer( &buffer[36..], true )? ) // 36
+                        Some( BitfieldMask::from_reader( input, true )? ) // 36
                     }
                 },
                 _ if core.bpp == 16 => {
@@ -409,17 +305,17 @@ impl Header {
         };
 
         // Read Extra header
-        let extra = match version {
-            Version::Microsoft4
-            | Version::Microsoft5
-                => Some( BMPExtra::from_buffer( &buffer[52..] )? ), // 52
+        let extra = match core.version {
+            Version::MICROSOFT4
+            | Version::MICROSOFT5
+                => Some( BMPExtra::from_reader( input )? ), // 52
             _ => None,
         };
 
         // Read profile header
-        let profile = match version {
-            Version::Microsoft5
-                => Some( BMPProfile::from_buffer( &buffer[104..] )? ),
+        let profile = match core.version {
+            Version::MICROSOFT5
+                => Some( BMPProfile::from_reader( input )? ),
             _ => None,
         };
 
@@ -434,8 +330,8 @@ impl Header {
 
         let palette = if palette_size > 0 {
             let palette_size = palette_size as usize;
-            let color_size = match version {
-                Version::Microsoft2 => 3,
+            let color_size = match core.version {
+                Version::MICROSOFT2 => 3,
                 _ => 4,
             } as usize;
 
@@ -450,7 +346,6 @@ impl Header {
         };
 
         Ok ( Header {
-            version,
             core,
             info,
             palette,
@@ -648,8 +543,8 @@ pub fn decode<TBuilder: Builder>(
     let height = header.core.height;
     let bpp = header.core.bpp;
     let info = header.info;
-    let compression = match header.version {
-        Version::Microsoft2 => false,
+    let compression = match header.core.version {
+        Version::MICROSOFT2 => false,
         _ if match info {
             Some( ref i ) => if i.compression.is_some() { true } else { false },
             None => false,
@@ -686,9 +581,9 @@ pub fn decode<TBuilder: Builder>(
         let buffer = buffer;
 
         let mut x: u32 = 0;
-        let mut y: u32 = if header.core.bottom_up { height - 1 } else { 0 };
+        let mut y: u32 = if !header.core.top_down { height - 1 } else { 0 };
         let mut index: usize = 0;
-        let row_mod: i32 = if header.core.bottom_up { -1 } else { 1 };
+        let row_mod: i32 = if !header.core.top_down { -1 } else { 1 };
 
         loop {
             if index >= count {
@@ -763,9 +658,9 @@ pub fn decode<TBuilder: Builder>(
         let buffer = buffer;
 
         let mut x: u32 = 0;
-        let mut y: u32 = if header.core.bottom_up { height - 1 } else { 0 };
+        let mut y: u32 = if !header.core.top_down { height - 1 } else { 0 };
         let mut index: usize = 0;
-        let row_mod: i32 = if header.core.bottom_up { -1 } else { 1 };
+        let row_mod: i32 = if !header.core.top_down { -1 } else { 1 };
 
         loop {
             if index >= count {
@@ -875,7 +770,7 @@ pub fn decode<TBuilder: Builder>(
         for y in 0..height {
             input.read_exact( &mut buffer )?;
 
-            let row = if header.core.bottom_up { height - y - 1 } else { y };
+            let row = if !header.core.top_down { height - y - 1 } else { y };
 
             decode_row( width, row, &buffer, &palette, &mask, &mut builder );
         }
