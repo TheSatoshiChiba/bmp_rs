@@ -70,6 +70,7 @@ pub( crate ) fn decode<TBuilder: super::Builder>(
     Ok( builder )
 }
 
+#[allow(dead_code)]
 fn extended_decode<TBuilder: ExtendedBuilder>(
     input: &mut Read, mut builder: TBuilder ) -> Result<TBuilder> {
 
