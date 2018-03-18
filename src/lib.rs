@@ -129,11 +129,11 @@ fn read_bitmask( input: &mut Read, version: Version, compression: Option<Compres
     -> Result<BitfieldMask> {
 
     match version {
-        Version::MICROSOFT3 if compression == Some( Compression::MASK )
+        Version::Microsoft3 if compression == Some( Compression::Bitmask )
             => BitfieldMask::from_reader( input, version ),
-        Version::MICROSOFT3 if compression == None
+        Version::Microsoft3 if compression == None
             => Ok( BitfieldMask::from_bpp( bpp ) ),
-        Version::MICROSOFT4 | Version::MICROSOFT5
+        Version::Microsoft4 | Version::Microsoft5
             => BitfieldMask::from_reader( input, version ),
         _ => Ok( BitfieldMask::new() ),
     }
@@ -146,7 +146,7 @@ impl Header {
 
         // Read Info header & Bitmask
         let ( info, bitmask ) = match core.version {
-            Version::MICROSOFT2 => ( None, BitfieldMask::new() ),
+            Version::Microsoft2 => ( None, BitfieldMask::new() ),
             _ => {
                 let i = InfoHeader::from_reader( input, core.bpp )?;
                 let m = read_bitmask( input, core.version, i.compression, core.bpp )?;
@@ -156,14 +156,14 @@ impl Header {
 
         // Read Extra header
         let extra = match core.version {
-            Version::MICROSOFT4 | Version::MICROSOFT5
+            Version::Microsoft4 | Version::Microsoft5
                 => Some( ExtraHeader::from_reader( input )? ),
             _ => None,
         };
 
         // Read profile header
         let profile = match core.version {
-            Version::MICROSOFT5
+            Version::Microsoft5
                 => Some( ProfileHeader::from_reader( input )? ),
             _ => None,
         };
@@ -180,7 +180,7 @@ impl Header {
         let palette = if palette_size > 0 {
             let palette_size = palette_size as usize;
             let color_size = match core.version {
-                Version::MICROSOFT2 => 3,
+                Version::Microsoft2 => 3,
                 _ => 4,
             } as usize;
 
@@ -380,7 +380,7 @@ pub fn decode<TBuilder: Builder>(
     let bpp = header.core.bpp;
     let info = header.info;
     let compression = match header.core.version {
-        Version::MICROSOFT2 => false,
+        Version::Microsoft2 => false,
         _ if match info {
             Some( ref i ) => if i.compression.is_some() { true } else { false },
             None => false,
