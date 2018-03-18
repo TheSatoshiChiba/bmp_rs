@@ -143,6 +143,24 @@ pub struct BitfieldMask {
 }
 
 impl BitfieldMask {
+    pub fn from_bpp( bpp: u32 ) -> Option<BitfieldMask> {
+        match bpp {
+            16 => Some( BitfieldMask {
+                red: 0x7C00,
+                green: 0x3E0,
+                blue: 0x1F,
+                alpha: 0x00,
+            } ),
+            32 => Some( BitfieldMask {
+                red: 0xFF0000,
+                green: 0xFF00,
+                blue: 0xFF,
+                alpha: 0x00,
+            } ),
+            _ => None,
+        }
+    }
+
     pub fn from_reader( input: &mut Read, version: Version ) -> Result<BitfieldMask> {
         let red = input.read_u32::<LittleEndian>()?;
         let green = input.read_u32::<LittleEndian>()?;

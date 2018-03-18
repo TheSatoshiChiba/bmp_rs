@@ -197,39 +197,33 @@ struct Header {
     profile: Option<BMPProfile>,
 }
 
+fn read_bitmask( input: &mut Read, version: Version, compression: Option<Compression>, bpp: u32 )
+    -> Result<Option<BitfieldMask>> {
+
+    match version {
+        Version::MICROSOFT3 if compression == Some( Compression::MASK )
+            => Ok( Some( BitfieldMask::from_reader( input, version )? ) ),
+        Version::MICROSOFT3 if compression == None
+            => Ok( BitfieldMask::from_bpp( bpp ) ),
+        Version::MICROSOFT4 | Version::MICROSOFT5
+            => Ok( Some( BitfieldMask::from_reader( input, version )? ) ),
+        _ => Ok( None ),
+    }
+}
+
 impl Header {
     fn from_reader( input: &mut Read ) -> Result<Header> {
         // Read core header
         let core = BitmapHeader::from_reader( input )?;
 
-        // Read Info header
-        let info = match core.version {
-            Version::MICROSOFT2 => None,
-            _ => Some( InfoHeader::from_reader( input, core.bpp )? ),
-        };
-
-        // Read the Bitmask
-        let bitmask = match info {
-            Some( ref i ) => match i.compression {
-                Some( Compression::MASK )
-                    => Some( BitfieldMask::from_reader( input, core.version )? ),
-                _ if core.bpp == 16
-                    => Some( BitfieldMask {
-                        red: 0x7C00,
-                        green: 0x3E0,
-                        blue: 0x1F,
-                        alpha: 0x00,
-                    } ),
-                _ if core.bpp == 32
-                    => Some( BitfieldMask {
-                        red: 0xFF0000,
-                        green: 0xFF00,
-                        blue: 0xFF,
-                        alpha: 0x00,
-                    } ),
-                _ => None,
+        // Read Info header & Bitmask
+        let ( info, bitmask ) = match core.version {
+            Version::MICROSOFT2 => ( None, None ),
+            _ => {
+                let i = InfoHeader::from_reader( input, core.bpp )?;
+                let m = read_bitmask( input, core.version, i.compression, core.bpp )?;
+                ( Some( i ), m )
             },
-            _ => None,
         };
 
         // Read Extra header
