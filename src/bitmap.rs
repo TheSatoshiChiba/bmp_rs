@@ -11,7 +11,7 @@ use byteorder::{
     LittleEndian,
 };
 
-pub fn create_error<S>( message: S ) -> io::Error
+pub fn new_data_error<S>( message: S ) -> io::Error
     where S: Into<String> {
 
     io::Error::new( io::ErrorKind::InvalidData, message.into() )
@@ -38,7 +38,7 @@ impl FileType {
             // 0x5043 => Ok( FileType::CP ),
             // 0x4349 => Ok( FileType::IC ),
             // 0x5450 => Ok( FileType::PT ),
-            x @ _ => Err( create_error( format!( "Invalid file type 0x{:X}", x ) ) ),
+            x @ _ => Err( new_data_error( format!( "Invalid file type 0x{:X}", x ) ) ),
         }
     }
 }
@@ -81,7 +81,7 @@ impl Version {
             0x28 => Ok( Version::MICROSOFT3 ),
             0x6C => Ok( Version::MICROSOFT4 ),
             0x7C => Ok( Version::MICROSOFT5 ),
-            x @ _ => Err( create_error( format!( "Invalid header size 0x{:X}", x ) ) ),
+            x @ _ => Err( new_data_error( format!( "Invalid header size 0x{:X}", x ) ) ),
         }
     }
 }
@@ -100,7 +100,7 @@ impl Compression {
             0x01 if bpp == 8 => Ok( Some( Compression::RLE8 ) ),
             0x02 if bpp == 4 => Ok( Some( Compression::RLE4 ) ),
             0x03 if bpp == 16 || bpp == 32 => Ok( Some( Compression::MASK ) ),
-            x @ _ => Err( create_error(
+            x @ _ => Err( new_data_error(
                 format!( "Invalid compression 0x{:X} for {}-bit", x, bpp ) ) ),
         }
     }
@@ -143,21 +143,30 @@ pub struct BitfieldMask {
 }
 
 impl BitfieldMask {
-    pub fn from_bpp( bpp: u32 ) -> Option<BitfieldMask> {
+    pub fn new() -> BitfieldMask {
+        BitfieldMask {
+            red: 0x00,
+            green: 0x00,
+            blue: 0x00,
+            alpha: 0x00,
+        }
+    }
+
+    pub fn from_bpp( bpp: u32 ) -> BitfieldMask {
         match bpp {
-            16 => Some( BitfieldMask {
+            16 => BitfieldMask {
                 red: 0x7C00,
                 green: 0x3E0,
                 blue: 0x1F,
                 alpha: 0x00,
-            } ),
-            32 => Some( BitfieldMask {
+            },
+            32 => BitfieldMask {
                 red: 0xFF0000,
                 green: 0xFF00,
                 blue: 0xFF,
                 alpha: 0x00,
-            } ),
-            _ => None,
+            },
+            _ => BitfieldMask::new(),
         }
     }
 
@@ -168,7 +177,7 @@ impl BitfieldMask {
 
         let alpha = match version {
             Version::MICROSOFT4 | Version::MICROSOFT5 => input.read_u32::<LittleEndian>()?,
-            _ => 0,
+            _ => 0x00,
         };
 
         Ok( BitfieldMask { red, green, blue, alpha } )
@@ -275,9 +284,9 @@ fn read_dimensions( input: &mut Read, version: Version ) -> Result<( u32, u32, b
 
     let top_down = h.is_negative();
     let w = w.checked_abs()
-        .ok_or( create_error( format!( "Invalid image width {}", w ) ) )? as u32;
+        .ok_or( new_data_error( format!( "Invalid image width {}", w ) ) )? as u32;
     let h = h.checked_abs()
-        .ok_or( create_error( format!( "Invalid image height {}", h ) ) )? as u32;
+        .ok_or( new_data_error( format!( "Invalid image height {}", h ) ) )? as u32;
 
     Ok( ( w, h, top_down ) )
 }
@@ -289,13 +298,13 @@ impl BitmapHeader {
 
         let planes = input.read_u16::<LittleEndian>()?;
         if planes != 1 {
-            return Err( create_error( format!( "Invalid number of planes {}", planes ) ) );
+            return Err( new_data_error( format!( "Invalid number of planes {}", planes ) ) );
         }
 
         let bpp = match input.read_u16::<LittleEndian>()? as u32 {
             x @ 1 | x @ 4 | x @ 8 | x @ 24 => x,
             x @ 16 | x @ 32 if version != Version::MICROSOFT2 => x,
-            x @ _ => return Err( create_error( format!( "Invalid bits per pixel {}", x ) ) ),
+            x @ _ => return Err( new_data_error( format!( "Invalid bits per pixel {}", x ) ) ),
         };
 
         Ok( BitmapHeader {

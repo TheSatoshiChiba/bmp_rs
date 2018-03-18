@@ -118,7 +118,7 @@ impl Palette {
 struct Header {
     core: BitmapHeader,
     info: Option<InfoHeader>,
-    bitmask: Option<BitfieldMask>,
+    bitmask: BitfieldMask,
     extra: Option<ExtraHeader>,
     profile: Option<ProfileHeader>,
 
@@ -126,16 +126,16 @@ struct Header {
 }
 
 fn read_bitmask( input: &mut Read, version: Version, compression: Option<Compression>, bpp: u32 )
-    -> Result<Option<BitfieldMask>> {
+    -> Result<BitfieldMask> {
 
     match version {
         Version::MICROSOFT3 if compression == Some( Compression::MASK )
-            => Ok( Some( BitfieldMask::from_reader( input, version )? ) ),
+            => BitfieldMask::from_reader( input, version ),
         Version::MICROSOFT3 if compression == None
             => Ok( BitfieldMask::from_bpp( bpp ) ),
         Version::MICROSOFT4 | Version::MICROSOFT5
-            => Ok( Some( BitfieldMask::from_reader( input, version )? ) ),
-        _ => Ok( None ),
+            => BitfieldMask::from_reader( input, version ),
+        _ => Ok( BitfieldMask::new() ),
     }
 }
 
@@ -146,7 +146,7 @@ impl Header {
 
         // Read Info header & Bitmask
         let ( info, bitmask ) = match core.version {
-            Version::MICROSOFT2 => ( None, None ),
+            Version::MICROSOFT2 => ( None, BitfieldMask::new() ),
             _ => {
                 let i = InfoHeader::from_reader( input, core.bpp )?;
                 let m = read_bitmask( input, core.version, i.compression, core.bpp )?;
@@ -221,6 +221,7 @@ fn decode_1bpp<TBuilder: Builder>(
                 return;
             }
         }
+
     }
 }
 
@@ -362,22 +363,8 @@ pub fn decode<TBuilder: Builder>(
 
     // Read file header
     let file_header = FileHeader::from_reader( input )?;
-    // let mut header: [u8; 14] = [0; 14];
-    // input.read_exact( &mut header )?;
-
-    // let mut cursor = Cursor::new( header );
-
-    // FileType::from_u16( cursor.read_u16::<LittleEndian>()? )?;
-    // // if header[0] != 0x42 && header[1] != 0x4D {
-    // //     return Err( create_error( "Invalid bitmap file." ) );
-    // // }
-
-    // // TODO: Make sensible decisions about ridiculous big files
-
-    // cursor.set_position( 10 );
-    // let _ = cursor.read_u32::<LittleEndian>()?; // Offset
-
-    // // TODO: Make sensible decisions about the offset to the pixel data
+    // TODO: Make sensible decisions about ridiculous big files
+    // TODO: Make sensible decisions about the offset to the pixel data
 
     // Read bitmap header
     let header = Header::from_reader( input )?;
@@ -403,11 +390,6 @@ pub fn decode<TBuilder: Builder>(
     let palette = match bpp {
         1 | 4 | 8 => header.palette.unwrap().colors,
         _ => Vec::new(),
-    };
-
-    let mask = match bpp {
-        16 | 32 => header.bitmask.unwrap(),
-        _ => BitfieldMask { red: 0, green: 0, blue: 0, alpha: 0 }
     };
 
     let decode_row = match bpp {
@@ -621,7 +603,7 @@ pub fn decode<TBuilder: Builder>(
 
             let row = if !header.core.top_down { height - y - 1 } else { y };
 
-            decode_row( width, row, &buffer, &palette, &mask, &mut builder );
+            decode_row( width, row, &buffer, &palette, &header.bitmask, &mut builder );
         }
     }
 
