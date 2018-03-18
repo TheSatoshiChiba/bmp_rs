@@ -60,13 +60,13 @@ use byteorder::{
 mod bitmap;
 
 use bitmap::{
-    create_error,
     FileHeader,
     Version,
     BitmapHeader,
     InfoHeader,
     Compression,
     BitfieldMask,
+    ExtraHeader,
 };
 
 pub trait Builder {
@@ -114,56 +114,6 @@ impl Palette {
     }
 }
 
-struct BMPExtra {
-    color_space_type: u32,
-    red_x: i32,
-    red_y: i32,
-    red_z: i32,
-    green_x: i32,
-    green_y: i32,
-    green_z: i32,
-    blue_x: i32,
-    blue_y: i32,
-    blue_z: i32,
-    gamma_red: u32,
-    gamma_green: u32,
-    gamma_blue: u32,
-}
-
-impl BMPExtra {
-    fn from_reader( input: &mut Read ) -> Result<BMPExtra> {
-        let color_space_type = input.read_u32::<LittleEndian>()?;
-        let red_x = input.read_i32::<LittleEndian>()?;
-        let red_y = input.read_i32::<LittleEndian>()?;
-        let red_z = input.read_i32::<LittleEndian>()?;
-        let green_x = input.read_i32::<LittleEndian>()?;
-        let green_y = input.read_i32::<LittleEndian>()?;
-        let green_z = input.read_i32::<LittleEndian>()?;
-        let blue_x = input.read_i32::<LittleEndian>()?;
-        let blue_y = input.read_i32::<LittleEndian>()?;
-        let blue_z = input.read_i32::<LittleEndian>()?;
-        let gamma_red = input.read_u32::<LittleEndian>()?;
-        let gamma_green = input.read_u32::<LittleEndian>()?;
-        let gamma_blue = input.read_u32::<LittleEndian>()?;
-
-        Ok( BMPExtra {
-            color_space_type,
-            red_x,
-            red_y,
-            red_z,
-            green_x,
-            green_y,
-            green_z,
-            blue_x,
-            blue_y,
-            blue_z,
-            gamma_red,
-            gamma_green,
-            gamma_blue,
-        } )
-    }
-}
-
 struct BMPProfile {
     intent: u32,
     data: u32,
@@ -191,9 +141,10 @@ struct Header {
     core: BitmapHeader,
     info: Option<InfoHeader>,
     bitmask: Option<BitfieldMask>,
+    extra: Option<ExtraHeader>,
 
     palette: Option<Palette>,
-    extra: Option<BMPExtra>,
+
     profile: Option<BMPProfile>,
 }
 
@@ -228,9 +179,8 @@ impl Header {
 
         // Read Extra header
         let extra = match core.version {
-            Version::MICROSOFT4
-            | Version::MICROSOFT5
-                => Some( BMPExtra::from_reader( input )? ), // 52
+            Version::MICROSOFT4 | Version::MICROSOFT5
+                => Some( ExtraHeader::from_reader( input )? ),
             _ => None,
         };
 

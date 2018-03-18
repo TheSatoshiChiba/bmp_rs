@@ -175,6 +175,56 @@ impl BitfieldMask {
     }
 }
 
+pub struct ExtraHeader {
+    color_space_type: u32,
+    red_x: i32,
+    red_y: i32,
+    red_z: i32,
+    green_x: i32,
+    green_y: i32,
+    green_z: i32,
+    blue_x: i32,
+    blue_y: i32,
+    blue_z: i32,
+    gamma_red: u32,
+    gamma_green: u32,
+    gamma_blue: u32,
+}
+
+impl ExtraHeader {
+    pub fn from_reader( input: &mut Read ) -> Result<ExtraHeader> {
+        let color_space_type = input.read_u32::<LittleEndian>()?;
+        let red_x = input.read_i32::<LittleEndian>()?;
+        let red_y = input.read_i32::<LittleEndian>()?;
+        let red_z = input.read_i32::<LittleEndian>()?;
+        let green_x = input.read_i32::<LittleEndian>()?;
+        let green_y = input.read_i32::<LittleEndian>()?;
+        let green_z = input.read_i32::<LittleEndian>()?;
+        let blue_x = input.read_i32::<LittleEndian>()?;
+        let blue_y = input.read_i32::<LittleEndian>()?;
+        let blue_z = input.read_i32::<LittleEndian>()?;
+        let gamma_red = input.read_u32::<LittleEndian>()?;
+        let gamma_green = input.read_u32::<LittleEndian>()?;
+        let gamma_blue = input.read_u32::<LittleEndian>()?;
+
+        Ok( ExtraHeader {
+            color_space_type,
+            red_x,
+            red_y,
+            red_z,
+            green_x,
+            green_y,
+            green_z,
+            blue_x,
+            blue_y,
+            blue_z,
+            gamma_red,
+            gamma_green,
+            gamma_blue,
+        } )
+    }
+}
+
 pub struct BitmapHeader {
     pub version: Version,
     pub width: u32,
