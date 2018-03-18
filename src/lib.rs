@@ -66,6 +66,7 @@ use bitmap::{
     BitmapHeader,
     InfoHeader,
     Compression,
+    BitfieldMask,
 };
 
 pub trait Builder {
@@ -110,27 +111,6 @@ impl Palette {
                 } );
         }
         Ok( Palette { colors } )
-    }
-}
-
-struct BitfieldMask {
-    red: u32,
-    green: u32,
-    blue: u32,
-    alpha: u32,
-}
-
-impl BitfieldMask {
-    fn from_reader( input: &mut Read, has_alpha: bool ) -> Result<BitfieldMask> {
-        let red = input.read_u32::<LittleEndian>()?;
-        let green = input.read_u32::<LittleEndian>()?;
-        let blue = input.read_u32::<LittleEndian>()?;
-        let alpha = match has_alpha {
-            true => input.read_u32::<LittleEndian>()?,
-            false => 0,
-        };
-
-        Ok( BitfieldMask { red, green, blue, alpha } )
     }
 }
 
@@ -210,8 +190,9 @@ impl BMPProfile {
 struct Header {
     core: BitmapHeader,
     info: Option<InfoHeader>,
-    palette: Option<Palette>,
     bitmask: Option<BitfieldMask>,
+
+    palette: Option<Palette>,
     extra: Option<BMPExtra>,
     profile: Option<BMPProfile>,
 }
@@ -230,33 +211,22 @@ impl Header {
         // Read the Bitmask
         let bitmask = match info {
             Some( ref i ) => match i.compression {
-                Some( Compression::MASK ) => {
-                    if core.version == Version::MICROSOFT3 {
-                        // The bitmask needs to be read from the buffer
-                        Some( BitfieldMask::from_reader( input, false )? )
-                    } else {
-                        // The bitmask is part of the header buffer
-                        Some( BitfieldMask::from_reader( input, true )? ) // 36
-                    }
-                },
-                _ if core.bpp == 16 => {
-                    // Default 16-bit mask
-                    Some( BitfieldMask {
+                Some( Compression::MASK )
+                    => Some( BitfieldMask::from_reader( input, core.version )? ),
+                _ if core.bpp == 16
+                    => Some( BitfieldMask {
                         red: 0x7C00,
                         green: 0x3E0,
                         blue: 0x1F,
                         alpha: 0x00,
-                    } )
-                },
-                _ if core.bpp == 32 => {
-                    // Default 32-bit mask
-                    Some( BitfieldMask {
+                    } ),
+                _ if core.bpp == 32
+                    => Some( BitfieldMask {
                         red: 0xFF0000,
                         green: 0xFF00,
                         blue: 0xFF,
                         alpha: 0x00,
-                    } )
-                },
+                    } ),
                 _ => None,
             },
             _ => None,

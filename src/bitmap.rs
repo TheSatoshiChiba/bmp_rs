@@ -135,6 +135,28 @@ impl InfoHeader {
     }
 }
 
+pub struct BitfieldMask {
+    pub red: u32,
+    pub green: u32,
+    pub blue: u32,
+    pub alpha: u32,
+}
+
+impl BitfieldMask {
+    pub fn from_reader( input: &mut Read, version: Version ) -> Result<BitfieldMask> {
+        let red = input.read_u32::<LittleEndian>()?;
+        let green = input.read_u32::<LittleEndian>()?;
+        let blue = input.read_u32::<LittleEndian>()?;
+
+        let alpha = match version {
+            Version::MICROSOFT4 | Version::MICROSOFT5 => input.read_u32::<LittleEndian>()?,
+            _ => 0,
+        };
+
+        Ok( BitfieldMask { red, green, blue, alpha } )
+    }
+}
+
 pub struct BitmapHeader {
     pub version: Version,
     pub width: u32,
