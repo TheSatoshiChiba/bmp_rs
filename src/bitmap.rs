@@ -86,6 +86,55 @@ impl Version {
     }
 }
 
+#[derive( PartialEq, Eq, Clone, Copy )]
+pub enum Compression {
+    RLE8,
+    RLE4,
+    MASK,
+}
+
+impl Compression {
+    pub fn from_u32( value: u32, bpp: u32 ) -> Result<Option<Compression>> {
+        match value {
+            0x00 => Ok( None ),
+            0x01 if bpp == 8 => Ok( Some( Compression::RLE8 ) ),
+            0x02 if bpp == 4 => Ok( Some( Compression::RLE4 ) ),
+            0x03 if bpp == 16 || bpp == 32 => Ok( Some( Compression::MASK ) ),
+            x @ _ => Err( create_error(
+                format!( "Invalid compression 0x{:X} for {}-bit", x, bpp ) ) ),
+        }
+    }
+}
+
+pub struct InfoHeader {
+    pub compression: Option<Compression>,
+    pub image_size: u32,
+    ppm_x: i32,
+    ppm_y: i32,
+    pub used_colors: u32,
+    important_colors: u32,
+}
+
+impl InfoHeader {
+    pub fn from_reader( input: &mut Read, bpp: u32 ) -> Result<InfoHeader> {
+        let compression = Compression::from_u32( input.read_u32::<LittleEndian>()?, bpp )?;
+        let image_size = input.read_u32::<LittleEndian>()?;
+        let ppm_x = input.read_i32::<LittleEndian>()?;
+        let ppm_y = input.read_i32::<LittleEndian>()?;
+        let used_colors = input.read_u32::<LittleEndian>()?;
+        let important_colors = input.read_u32::<LittleEndian>()?;
+
+        Ok ( InfoHeader {
+            compression,
+            image_size,
+            ppm_x,
+            ppm_y,
+            used_colors,
+            important_colors,
+        } )
+    }
+}
+
 pub struct BitmapHeader {
     pub version: Version,
     pub width: u32,

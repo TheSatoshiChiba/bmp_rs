@@ -64,6 +64,8 @@ use bitmap::{
     FileHeader,
     Version,
     BitmapHeader,
+    InfoHeader,
+    Compression,
 };
 
 pub trait Builder {
@@ -108,50 +110,6 @@ impl Palette {
                 } );
         }
         Ok( Palette { colors } )
-    }
-}
-
-#[derive( PartialEq, Eq, Clone, Copy )]
-enum Compression {
-    RLE8Bit = 1,
-    RLE4Bit = 2,
-    Bitfield = 3,
-}
-
-struct Info {
-    compression: Option<Compression>,
-    image_size: u32,
-    ppm_x: i32,
-    ppm_y: i32,
-    used_colors: u32,
-    important_colors: u32,
-}
-
-impl Info {
-    fn from_reader( input: &mut Read, bpp: u32 ) -> Result<Info> {
-        let compression = match input.read_u32::<LittleEndian>()? {
-            0 => None,
-            1 if bpp == 8 => Some( Compression::RLE8Bit ),
-            2 if bpp == 4 => Some( Compression::RLE4Bit ),
-            3 if bpp == 16 || bpp == 32 => Some( Compression::Bitfield ),
-            v @ _ => return Err( create_error(
-                format!( "Invalid compression {} for {}-bit", v, bpp ) ) ),
-        };
-
-        let image_size = input.read_u32::<LittleEndian>()?;
-        let ppm_x = input.read_i32::<LittleEndian>()?;
-        let ppm_y = input.read_i32::<LittleEndian>()?;
-        let used_colors = input.read_u32::<LittleEndian>()?;
-        let important_colors = input.read_u32::<LittleEndian>()?;
-
-        Ok ( Info {
-            compression,
-            image_size,
-            ppm_x,
-            ppm_y,
-            used_colors,
-            important_colors,
-        } )
     }
 }
 
@@ -251,7 +209,7 @@ impl BMPProfile {
 
 struct Header {
     core: BitmapHeader,
-    info: Option<Info>,
+    info: Option<InfoHeader>,
     palette: Option<Palette>,
     bitmask: Option<BitfieldMask>,
     extra: Option<BMPExtra>,
@@ -266,13 +224,13 @@ impl Header {
         // Read Info header
         let info = match core.version {
             Version::MICROSOFT2 => None,
-            _ => Some( Info::from_reader( input, core.bpp )? ),
+            _ => Some( InfoHeader::from_reader( input, core.bpp )? ),
         };
 
         // Read the Bitmask
         let bitmask = match info {
             Some( ref i ) => match i.compression {
-                Some( Compression::Bitfield ) => {
+                Some( Compression::MASK ) => {
                     if core.version == Version::MICROSOFT3 {
                         // The bitmask needs to be read from the buffer
                         Some( BitfieldMask::from_reader( input, false )? )
