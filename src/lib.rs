@@ -67,6 +67,7 @@ use bitmap::{
     Compression,
     BitfieldMask,
     ExtraHeader,
+    ProfileHeader,
 };
 
 pub trait Builder {
@@ -114,38 +115,14 @@ impl Palette {
     }
 }
 
-struct BMPProfile {
-    intent: u32,
-    data: u32,
-    size: u32,
-    reserved: u32,
-}
-
-impl BMPProfile {
-    fn from_reader( input: &mut Read ) -> Result<BMPProfile> {
-        let intent = input.read_u32::<LittleEndian>()?;
-        let data = input.read_u32::<LittleEndian>()?;
-        let size = input.read_u32::<LittleEndian>()?;
-        let reserved = input.read_u32::<LittleEndian>()?;
-
-        Ok( BMPProfile {
-            intent,
-            data,
-            size,
-            reserved,
-        } )
-    }
-}
-
 struct Header {
     core: BitmapHeader,
     info: Option<InfoHeader>,
     bitmask: Option<BitfieldMask>,
     extra: Option<ExtraHeader>,
+    profile: Option<ProfileHeader>,
 
     palette: Option<Palette>,
-
-    profile: Option<BMPProfile>,
 }
 
 fn read_bitmask( input: &mut Read, version: Version, compression: Option<Compression>, bpp: u32 )
@@ -187,7 +164,7 @@ impl Header {
         // Read profile header
         let profile = match core.version {
             Version::MICROSOFT5
-                => Some( BMPProfile::from_reader( input )? ),
+                => Some( ProfileHeader::from_reader( input )? ),
             _ => None,
         };
 

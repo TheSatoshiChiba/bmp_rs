@@ -225,6 +225,29 @@ impl ExtraHeader {
     }
 }
 
+pub struct ProfileHeader {
+    intent: u32,
+    data: u32,
+    size: u32,
+    reserved: u32,
+}
+
+impl ProfileHeader {
+    pub fn from_reader( input: &mut Read ) -> Result<ProfileHeader> {
+        let intent = input.read_u32::<LittleEndian>()?;
+        let data = input.read_u32::<LittleEndian>()?;
+        let size = input.read_u32::<LittleEndian>()?;
+        let reserved = input.read_u32::<LittleEndian>()?;
+
+        Ok( ProfileHeader {
+            intent,
+            data,
+            size,
+            reserved,
+        } )
+    }
+}
+
 pub struct BitmapHeader {
     pub version: Version,
     pub width: u32,
