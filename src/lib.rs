@@ -60,7 +60,6 @@ use byteorder::{
 mod bitmap;
 
 use bitmap::{
-    FileHeader,
     Version,
     CoreHeader,
     InfoHeader,
@@ -362,7 +361,8 @@ pub fn decode<TBuilder: Builder>(
     input: &mut Read, mut builder: TBuilder ) -> Result<TBuilder> {
 
     // Read file header
-    let file_header = FileHeader::from_reader( input )?;
+    builder = bitmap::decode( input, builder )?;
+
     // TODO: Make sensible decisions about ridiculous big files
     // TODO: Make sensible decisions about the offset to the pixel data
 

@@ -18,7 +18,7 @@ fn new_data_error<S>( message: S ) -> io::Error
 }
 
 #[derive( PartialEq, Eq, Clone, Copy )]
-pub enum FileType {
+enum FileType {
     // DDB, // Denotes a device dependant bitmap file
     DeviceIndependentBitmap, // Denotes a device independent bitmap file
     // BA, // Denotes a bitmap array
@@ -27,6 +27,67 @@ pub enum FileType {
     // IC, // Denotes a icon
     // PT, // Denotes a pointer
 }
+
+trait ExtendedBuilder {
+    type TResult;
+
+    fn set_file_type( &mut self, file_type: FileType );
+}
+
+impl FileType {
+    fn from_reader( input: &mut Read ) -> Result<FileType> {
+        match input.read_u16::<LittleEndian>()? {
+            // 0 => Ok( FileType::DDB ), // TODO: Enable for MS Version 1 Bitmaps
+            0x4D42 => Ok( FileType::DeviceIndependentBitmap ),
+            // 0x4142 => Ok( FileType::BA ),
+            // 0x4943 => Ok( FileType::CI ),
+            // 0x5043 => Ok( FileType::CP ),
+            // 0x4349 => Ok( FileType::IC ),
+            // 0x5450 => Ok( FileType::PT ),
+            x @ _ => Err( new_data_error( format!( "Invalid file type 0x{:X}", x ) ) ),
+        }
+    }
+}
+
+fn read_file_header( input: &mut Read ) -> Result<FileType> {
+    let file_type = FileType::from_reader( input )?;
+    let _file_size = input.read_u32::<LittleEndian>()?;
+    // TODO: make sense of file_size (error when too big or small)
+
+    input.read_u32::<LittleEndian>()?; // Reserved
+
+    let _data_offset = input.read_u32::<LittleEndian>()?;
+    // TODO: make sense of data_offset (error when too big or small)
+
+    Ok( file_type )
+}
+
+pub( crate ) fn decode<TBuilder: super::Builder>(
+    input: &mut Read, mut builder: TBuilder ) -> Result<TBuilder> {
+
+    let _file_type = read_file_header( input )?;
+
+    Ok( builder )
+}
+
+fn extended_decode<TBuilder: ExtendedBuilder>(
+    input: &mut Read, mut builder: TBuilder ) -> Result<TBuilder> {
+
+    builder.set_file_type( read_file_header( input )? );
+
+    Ok( builder )
+}
+
+
+
+
+
+
+
+
+
+
+
 
 #[derive( PartialEq, Eq, Clone, Copy )]
 pub enum Version {
@@ -41,12 +102,6 @@ pub enum Compression {
     RunLength8,
     RunLength4,
     Bitmask,
-}
-
-pub struct FileHeader {
-    file_type: FileType,
-    file_size: u32,
-    data_offset: u32,
 }
 
 pub struct BitfieldMask {
@@ -95,38 +150,6 @@ pub struct CoreHeader {
     pub bpp: u32,
     planes: u16,
     pub top_down: bool,
-}
-
-impl FileType {
-    pub fn from_u16( value: u16 ) -> Result<FileType> {
-        match value {
-            // 0 => Ok( FileType::DDB ), // TODO: Enable for MS Version 1 Bitmaps
-            0x4D42 => Ok( FileType::DeviceIndependentBitmap ),
-            // 0x4142 => Ok( FileType::BA ),
-            // 0x4943 => Ok( FileType::CI ),
-            // 0x5043 => Ok( FileType::CP ),
-            // 0x4349 => Ok( FileType::IC ),
-            // 0x5450 => Ok( FileType::PT ),
-            x @ _ => Err( new_data_error( format!( "Invalid file type 0x{:X}", x ) ) ),
-        }
-    }
-}
-
-impl FileHeader {
-    pub fn from_reader( input: &mut Read ) -> Result<FileHeader> {
-        let file_type = FileType::from_u16( input.read_u16::<LittleEndian>()? )?;
-        let file_size = input.read_u32::<LittleEndian>()?;
-
-        input.read_u32::<LittleEndian>()?; // Reserved
-
-        let data_offset = input.read_u32::<LittleEndian>()?;
-
-        Ok( FileHeader {
-            file_type,
-            file_size,
-            data_offset,
-        } )
-    }
 }
 
 impl Version {
