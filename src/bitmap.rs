@@ -11,7 +11,7 @@ use byteorder::{
     LittleEndian,
 };
 
-pub fn new_data_error<S>( message: S ) -> io::Error
+fn new_data_error<S>( message: S ) -> io::Error
     where S: Into<String> {
 
     io::Error::new( io::ErrorKind::InvalidData, message.into() )
