@@ -62,7 +62,7 @@ mod bitmap;
 use bitmap::{
     FileHeader,
     Version,
-    BitmapHeader,
+    CoreHeader,
     InfoHeader,
     Compression,
     BitfieldMask,
@@ -116,7 +116,7 @@ impl Palette {
 }
 
 struct Header {
-    core: BitmapHeader,
+    core: CoreHeader,
     info: Option<InfoHeader>,
     bitmask: BitfieldMask,
     extra: Option<ExtraHeader>,
@@ -142,7 +142,7 @@ fn read_bitmask( input: &mut Read, version: Version, compression: Option<Compres
 impl Header {
     fn from_reader( input: &mut Read ) -> Result<Header> {
         // Read core header
-        let core = BitmapHeader::from_reader( input )?;
+        let core = CoreHeader::from_reader( input )?;
 
         // Read Info header & Bitmask
         let ( info, bitmask ) = match core.version {

@@ -88,7 +88,7 @@ pub struct ProfileHeader {
     reserved: u32,
 }
 
-pub struct BitmapHeader {
+pub struct CoreHeader {
     pub version: Version,
     pub width: u32,
     pub height: u32,
@@ -291,8 +291,8 @@ fn read_dimensions( input: &mut Read, version: Version ) -> Result<( u32, u32, b
     Ok( ( w, h, top_down ) )
 }
 
-impl BitmapHeader {
-    pub fn from_reader( input: &mut Read ) -> Result<BitmapHeader> {
+impl CoreHeader {
+    pub fn from_reader( input: &mut Read ) -> Result<CoreHeader> {
         let version = Version::from_u32( input.read_u32::<LittleEndian>()? )?;
         let ( width, height, top_down ) = read_dimensions( input, version )?;
 
@@ -307,7 +307,7 @@ impl BitmapHeader {
             x @ _ => return Err( new_data_error( format!( "Invalid bits per pixel {}", x ) ) ),
         };
 
-        Ok( BitmapHeader {
+        Ok( CoreHeader {
             version,
             width,
             height,
